@@ -15,7 +15,7 @@ const GOT = {
 };
 (async function () {
   await loadConfig();
-  document.body.prepend(topBar({ tool: next === 'garden/' ? 'garden' : next === 'print/' ? 'print' : '' }));
+  document.body.prepend(topBar({ tool: next === 'planner/' ? 'planner' : next === 'print/' ? 'print' : '' }));
   $('#si_reset').href = CFG.SITE + '/reset.html'; $('#si_join').href = CFG.SITE + '/register.html';
   const form = $('#si_form'), err = $('#si_err'), btn = $('#si_btn'), ts = turnstile($('#ts'));
   $('#si_show').addEventListener('click', () => { const p = $('#si_p'), show = p.type === 'password'; p.type = show ? 'text' : 'password'; $('#si_show').textContent = show ? 'Hide password' : 'Show password'; $('#si_show').setAttribute('aria-pressed', show ? 'true' : 'false'); });

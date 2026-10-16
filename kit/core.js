@@ -234,7 +234,7 @@ export function turnstile(box) {
 
 /* ---------- The membership gate ---------- */
 const PASS = t => 'lt_tool_pass_' + t;
-export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, garden: { name: 'LT-Garden', path: 'garden/' } };
+export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, planner: { name: 'LT-Planner', path: 'planner/' } };
 function clearPasses() { for (const t of Object.keys(TOOLS)) store.del(PASS(t)); }
 export const REASONS = {
   closed: 'This tool is not open to members yet. It will open soon.',

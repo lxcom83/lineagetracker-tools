@@ -7,7 +7,7 @@ but you (staff) can already try LT-Print. Accounts (ACCOUNTS_GO_LIVE.md) must be
 
 1. Supabase, SQL Editor, New query: paste **`13_tools.sql`** (from the accounts backend zip) and Run. It is safe to run twice.
 2. This adds:
-   - the switches `tools_print` and `tools_garden` (both off);
+   - the switches `tools_print` and `tools_planner` (both off);
    - the `tool_use` table;
    - `member_tool_open`, `member_tools_export`, `adm_tools_stats` and `adm_member_tools`;
    - a `public_settings` that also says which tools are open.

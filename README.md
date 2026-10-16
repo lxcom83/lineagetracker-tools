@@ -6,7 +6,7 @@ JavaScript modules: there is no build step, so what is in this folder is exactly
 - `index.html`: the tools home page.
 - `signin.html`: sign in with a Lineage Tracker account. It uses the same Supabase Auth as lineagetracker.org, including the two-step code.
 - `print/`: **LT-Print**, the label and sticker designer.
-- `garden/`: LT-Garden, which is a placeholder ("coming later").
+- `planner/`: LT-Planner (garden and farm planner), which is a placeholder ("coming later").
 - `kit/`: the shared kit every tool uses:
   - `core.js`: settings, sign-in and the membership gate.
   - `bar.js`: the top bar and tool switcher.
