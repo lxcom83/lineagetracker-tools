@@ -1,0 +1,127 @@
+/* LT tools kit: the Lineage Tracker look for the tools (same colours and fonts as the app and website). */
+@import url("fonts.css");
+:root{--paper:#F5F2EC;--card:#FFFFFF;--sunk:#ECE7DE;--ink:#1F2B40;--navy:#1F3557;--copper:#C8794A;--copper-l:#D9915F;--muted:#5D6470;--line:#DDD5C8;
+  --sel:#2B7487;--sel-soft:rgba(43,116,135,.14);--danger:#A23B2A;--ok:#2F6B3F;--desk:#E4DED3;
+  --f-head:"Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif;--f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:12px;--bar:56px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--paper:#141A24;--card:#1C2433;--sunk:#10151E;--ink:#ECE8E1;--muted:#A3A9B3;--line:#2C3546;--navy:#ECE8E1;--sel:#5FB3C7;--sel-soft:rgba(95,179,199,.18);--desk:#0E131B;--danger:#E08573;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--f-body);-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+a{color:var(--copper)}
+h1,h2,h3{font-family:var(--f-head);font-weight:700;line-height:1.08;margin:0 0 .4em;color:var(--navy)}
+h1{font-size:clamp(2.2rem,6vw,3.4rem)}h2{font-size:1.55rem}h3{font-size:1.2rem}
+p{margin:0 0 .9em;max-width:64ch}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.muted{color:var(--muted)}.small{font-size:.9rem}
+[hidden]{display:none!important}
+
+/* top bar: tree logo used as supplied, with the tool's name beside it */
+.kbar{position:sticky;top:0;z-index:20;height:var(--bar);display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--card);border-bottom:1px solid var(--line)}
+.kbrand{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--navy);font:700 1.3rem/1 var(--f-head);white-space:nowrap;min-width:0}
+.kbrand img{width:30px;height:32px;flex:none}
+.kbrand .tool{color:var(--copper)}
+.logo-dark{display:none!important}
+@media (prefers-color-scheme:dark){.logo-light{display:none!important}.logo-dark{display:block!important}}
+@media (max-width:520px){.kbrand .bname .lt,.kbrand .dot{display:none}}
+.kbrand .dot{color:var(--muted);font-weight:500}
+.kbar .grow{flex:1;min-width:0}
+.kswitch{position:relative}
+.kmenu{position:absolute;right:0;top:calc(100% + 6px);min-width:230px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 14px 34px -14px rgba(0,0,0,.35);padding:6px;z-index:40}
+.kmenu a,.kmenu button{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:6px 10px;border:0;border-radius:8px;background:none;text-align:left;text-decoration:none;color:var(--ink);cursor:pointer}
+.kmenu a:hover,.kmenu button:hover{background:var(--sunk)}
+.kmenu .sep{height:1px;background:var(--line);margin:6px 4px}
+.kmenu small{display:block;color:var(--muted);font-size:.82rem;line-height:1.2}
+.kmenu .here{font-weight:700;color:var(--copper)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:12px;font-weight:700;text-decoration:none;border:1.5px solid var(--line);color:var(--ink);background:var(--card);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--copper-l);border-color:var(--copper-l);color:#1F3557}
+.btn.dark{background:#1F3557;border-color:#1F3557;color:#F5F2EC}
+.btn.danger{color:var(--danger);border-color:currentColor}
+.btn.sm{min-height:36px;padding:0 12px;font-size:.92rem;border-radius:10px}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{display:inline-grid;place-items:center;width:44px;height:44px;flex:none;border:0;border-radius:10px;background:none;color:var(--ink);cursor:pointer}
+.icon-btn:hover{background:var(--sunk)}
+.icon-btn[aria-pressed="true"]{background:var(--sel-soft);color:var(--sel)}
+.icon-btn:disabled{opacity:.35;cursor:default;background:none}
+.icon-btn.sm{width:32px;height:32px;border-radius:8px}
+.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.icon-btn.sm .ic{width:18px;height:18px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 4px}
+
+/* segmented steps (Design, Records, Print) */
+.seg{display:inline-flex;background:var(--sunk);border-radius:12px;padding:3px;gap:2px}
+.seg button{min-height:38px;padding:0 14px;border:0;border-radius:10px;background:none;font-weight:700;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg .num{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--line);color:var(--ink);font-size:.78rem}
+.seg button[aria-pressed="true"] .num{background:var(--copper-l);color:#1F3557}
+
+/* forms */
+.fld{display:flex;flex-direction:column;gap:4px;margin:0 0 12px;min-width:0}
+.fld>span,.lbl{font-weight:700;font-size:.9rem}
+.fld small{color:var(--muted);font-size:.84rem}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=search],input:not([type]),select,textarea{width:100%;min-height:42px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card)}
+textarea{min-height:70px;resize:vertical}
+input[type=color]{width:44px;height:38px;padding:2px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+input[type=checkbox],input[type=radio]{width:20px;height:20px;accent-color:var(--copper)}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.row>.fld{flex:1;min-width:90px}
+.chk{display:flex;align-items:center;gap:8px;min-height:36px;cursor:pointer}
+.err{color:var(--danger);font-weight:700}
+.notice{background:var(--sunk);border-radius:12px;padding:12px 14px;margin:12px 0;max-width:72ch}
+.notice.warn{border-left:4px solid var(--copper-l)}
+
+/* cards and pages */
+.page{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.tool-card{display:flex;flex-direction:column;gap:6px;text-decoration:none;color:inherit;border-top:5px solid var(--copper-l)}
+.tool-card h2{margin:0}
+.tool-card .soon{align-self:flex-start;background:var(--sunk);color:var(--muted);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700}
+.kfoot{color:var(--muted);font-size:.9rem;border-top:1px solid var(--line);padding:18px;text-align:center}
+.kfoot a{color:var(--muted)}
+
+/* dialogs */
+.dlg-wrap{position:fixed;inset:0;z-index:100;background:rgba(15,20,30,.45);display:grid;place-items:center;padding:14px}
+.dlg{background:var(--card);border-radius:18px;width:min(520px,100%);max-height:calc(100vh - 28px);display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
+.dlg.wide{width:min(860px,100%)}
+.dlg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px 4px 20px}
+.dlg-head h2{margin:0}
+.dlg-body{padding:6px 20px 18px;overflow:auto}
+
+/* toast */
+#kit-toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,30px);opacity:0;pointer-events:none;background:#1F3557;color:#F5F2EC;padding:10px 16px;border-radius:12px;font-weight:700;z-index:200;transition:.2s;max-width:calc(100vw - 30px)}
+#kit-toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* gate splash */
+.gate{max-width:560px;margin:8vh auto;padding:0 18px;text-align:center}
+.gate img.logo{width:84px;height:91px;margin:0 auto 12px;display:block}
+.gate .card{text-align:left}
+.gate .actions{justify-content:center}
+
+/* the feature tree (SolidWorks-style): rename, reorder, group, hide, lock, disable */
+.tree{list-style:none;margin:0;padding:0}
+.tree ul{list-style:none;margin:0;padding:0 0 0 18px}
+.trow{display:flex;align-items:center;gap:2px;min-height:38px;padding:0 2px 0 4px;border-radius:8px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:pan-y}
+.trow:hover{background:var(--sunk)}
+.trow.sel{background:var(--sel-soft)}
+.trow.drop-before{box-shadow:inset 0 2px 0 var(--sel)}
+.trow.drop-after{box-shadow:inset 0 -2px 0 var(--sel)}
+.trow.drop-in{outline:2px dashed var(--sel);outline-offset:-2px}
+.trow .tw{width:22px;height:22px;display:grid;place-items:center;flex:none;border:0;background:none;color:var(--muted);padding:0;cursor:pointer}
+.trow .tw .ic{width:16px;height:16px}
+.trow .handle{cursor:grab;color:var(--muted);touch-action:none}
+.trow .tname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.94rem}
+.trow .tname small{color:var(--muted);margin-left:6px}
+.trow.off .tname{text-decoration:line-through;color:var(--muted)}
+.trow.hid .tname{opacity:.55}
+.trow .flags{display:flex;flex:none}
+.trow .flags .icon-btn{width:30px;height:30px;color:var(--muted)}
+.trow .flags .icon-btn .ic{width:17px;height:17px}
+.trow .flags .icon-btn.on{color:var(--sel)}
+.trow .flags .icon-btn.warn{color:var(--danger)}
+.trow input.rename{min-height:30px;padding:2px 6px;font-size:.94rem}
