@@ -17,7 +17,7 @@ if (window.top !== window.self) { try { document.documentElement.style.display =
 export const CFG = {
   SUPABASE_URL: 'https://zlekqqzvkstdcrrupzfs.supabase.co',
   PUBLISHABLE_KEY: 'sb_publishable_rkMTn3vFh8y77G9Lj5peAA_pN1tS_Fs',
-  TURNSTILE_SITE_KEY: '0x4AAAAAAAFVX_SnEoyXnA85N',
+  TURNSTILE_SITE_KEY: '0x4AAAAAAFVX_SnEoyXnA85N',
   SITE: 'https://lineagetracker.org',
   APP: 'https://app.lineagetracker.org/',
   // Same Google client ID and Dropbox app key as the app (config.json can override, like the app's config.json).
@@ -220,13 +220,14 @@ let tsLoaded = false; const tsQueue = [];
 export function turnstile(box) {
   const h = { token: '', widget: null, reset() { h.token = ''; if (window.turnstile && h.widget !== null) window.turnstile.reset(h.widget); } };
   if (!CFG.TURNSTILE_SITE_KEY || !box) return h;
-  const draw = () => { h.widget = window.turnstile.render(box, { sitekey: CFG.TURNSTILE_SITE_KEY, callback: t => { h.token = t; }, 'expired-callback': () => { h.token = ''; }, 'error-callback': () => { h.token = ''; } }); };
+  const note = txt => { let n = box.parentNode && box.parentNode.querySelector('.ts-note'); if (!n) { n = document.createElement('p'); n.className = 'ts-note'; n.style.cssText = 'color:#8a2c1c;font-size:.85rem;margin:.5rem 0'; box.after(n); } n.textContent = txt; };
+  const draw = () => { h.widget = window.turnstile.render(box, { sitekey: CFG.TURNSTILE_SITE_KEY, callback: t => { h.token = t; note(''); }, 'expired-callback': () => { h.token = ''; }, 'error-callback': code => { h.token = ''; note('The spam check could not start (error ' + code + '). Tell us this number. Meanwhile try a private window, and switch off any ad or privacy blocker for this page.'); return true; } }); };
   if (window.turnstile) draw();
   else {
     tsQueue.push(draw);
     if (!tsLoaded) {
       tsLoaded = true; window.ltTsReady = () => tsQueue.splice(0).forEach(f => f());
-      const s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=ltTsReady'; s.async = true; s.defer = true; document.head.append(s);
+      const s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=ltTsReady'; s.async = true; s.defer = true; s.onerror = () => { const b = box; const p = document.createElement('p'); p.style.cssText = 'color:#8a2c1c;font-size:.85rem'; p.textContent = 'The spam check script was blocked (challenges.cloudflare.com). Switch off any ad, privacy or VPN blocker for this page and reload.'; b.after(p); }; document.head.append(s);
     }
   }
   return h;
