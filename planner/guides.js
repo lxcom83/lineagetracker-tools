@@ -54,7 +54,7 @@ export const AU_ZONES = [['tropical', 'Tropical'], ['subtropical', 'Subtropical'
 export const PACKS = { AU: { name: 'Australia', zones: AU_ZONES, months: (crop, zone) => (GUIDES[crop] || GUIDES.other)[9][zone] || [] } };
 /* the frost-based packs (frost.js): the months are worked out from each zone's typical last frost and frost-free days */
 for (const cc of Object.keys(ZONES)) PACKS[cc] = frostPack(NAMES[cc], ZONES[cc], crop => (GUIDES[crop] || GUIDES.other)[6]);
-export const COUNTRIES = [['AU', 'Australia'], ['NZ', 'New Zealand'], ['GB', 'United Kingdom'], ['IE', 'Ireland'], ['US', 'United States'], ['CA', 'Canada'], ['ZA', 'South Africa'], ['DE', 'Germany'], ['FR', 'France'], ['NL', 'Netherlands'], ['IN', 'India'], ['PH', 'Philippines']];
+export const COUNTRIES = [['AU', 'Australia'], ['NZ', 'New Zealand'], ['GB', 'United Kingdom'], ['IE', 'Ireland'], ['US', 'United States'], ['CA', 'Canada'], ['ZA', 'South Africa'], ['DE', 'Germany'], ['FR', 'France'], ['ES', 'Spain'], ['NL', 'Netherlands'], ['IN', 'India'], ['PH', 'Philippines']];
 export const MESSAGE = 'This function can not be used without a location.';
 /* Is there a guide for this location? */
 export const hasGuide = (country, zone) => !!(PACKS[country] && PACKS[country].zones.some(z => z[0] === zone));

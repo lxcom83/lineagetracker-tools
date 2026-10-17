@@ -4,7 +4,7 @@
           x = very hot summer (Jun-Sep).
    Source "table": the United States and Canadian dates are the average frost dates of a representative town in each state or
    province, taken from the Harvest to Table frost-date tables (which draw on NOAA records), checked against the Farmers'
-   Almanac city pages.  Source "estimate": the British, Irish, German, French, Dutch and New Zealand regions are typical values
+   Almanac city pages.  Source "estimate": the British, Irish, German, French, Dutch, Spanish and New Zealand regions are typical values
    set by the planner author from national weather-service climate descriptions and gardening guides.  Both are
    starting points for the owner to review; a garden in a hollow, on a hill or beside the sea can differ by weeks. */
 const T = `
@@ -171,6 +171,23 @@ nl-north|Netherlands north (Groningen, Friesland, Drenthe)|4-28|180|2|
 nl-centre|Netherlands centre (Utrecht, Gelderland, Flevoland)|4-28|180|2|
 nl-east|Netherlands east (Overijssel)|4-30|175|2|
 nl-south|Netherlands south (Brabant, Limburg)|4-20|190|2|
+es-galicia|Galicia (Santiago, A Coruña, Vigo)|3-15|255|3|w
+es-asturias|Asturias and Cantabria|3-10|260|3|w
+es-vasco|Basque Country (Bilbao, San Sebastián)|3-20|245|2|w
+es-navarra|Navarre and La Rioja|4-8|205|1|h
+es-castilla-leon|Castilla y León (Valladolid, Burgos, León)|5-8|160|0|
+es-aragon|Aragon (Zaragoza, Huesca, Teruel valleys)|3-30|220|0|d
+es-pirineos|Pyrenees and high mountains|5-25|125|0|
+es-cat-coast|Catalonia coast (Barcelona, Tarragona)|2-15|290|0|wh
+es-cat-inland|Catalonia inland (Lleida, Girona hills)|3-28|225|0|h
+es-madrid|Madrid and Castilla-La Mancha|4-12|200|0|d
+es-extremadura|Extremadura|3-5|250|0|wd
+es-valencia|Valencia and Alicante|1-25|330|0|wd
+es-murcia|Murcia and Almería inland|2-15|300|0|wx
+es-andalucia|Andalusia interior (Seville, Córdoba, Jaén)|2-20|290|0|wd
+es-costa-sol|Andalusia coast (Málaga, Cádiz, Almería coast)|1-10|350|0|wh
+es-baleares|Balearic Islands|2-1|320|0|wh
+es-canarias|Canary Islands|1-1|360|0|w
 nz-northland|Northland|8-15|285|5|w
 nz-auckland|Auckland|8-20|280|5|w
 nz-waikato|Waikato and Taranaki|9-1|260|6|w
@@ -184,7 +201,7 @@ nz-otago|Otago and coastal Southland|10-15|185|2|
 nz-central-otago|Central Otago and Queenstown|10-30|160|1|
 `;
 const HOT = { h: [7, 8], d: [6, 7, 8], x: [6, 7, 8, 9] };
-const GROUP = { US: 'By state or region', CA: 'By province or territory', GB: 'By region', IE: 'By province', DE: 'By state', FR: 'By region', NL: 'By region', NZ: 'By region' };
+const GROUP = { US: 'By state or region', CA: 'By province or territory', GB: 'By region', IE: 'By province', DE: 'By state', FR: 'By region', NL: 'By region', NZ: 'By region', ES: 'By region' };
 /* returns { US: [[code, name, [m, d], days, {winter, hot, late, group}], ...], ... } */
 export const REGIONS = {};
 for (const line of T.trim().split('\n')) {
