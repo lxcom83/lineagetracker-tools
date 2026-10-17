@@ -136,3 +136,12 @@ table.recs td.cell-in input{min-height:36px;padding:4px 8px;min-width:120px}
 .fillform{background:var(--sunk);border-radius:12px;padding:12px;margin:0 0 10px}
 details.nudge{margin:8px 0}
 details.nudge summary{cursor:pointer;font-weight:700;font-size:.92rem;min-height:32px;display:flex;align-items:center}
+
+.tree-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.tree-actions .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:1 1 0;min-width:0;padding:0 6px;font-size:.82rem;white-space:nowrap}
+.tree-actions .btn .ic{width:16px;height:16px}
+.edit-all{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:0 0 12px}
+.edit-all .ic{width:18px;height:18px}
+.eat-list{display:grid;gap:10px;margin:8px 0 12px}
+.eat-row textarea,.eat-row input{width:100%}
+.eat-shows{display:block;margin-top:2px}

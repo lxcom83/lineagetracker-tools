@@ -1,0 +1,45 @@
+/* LT-Planner: only what differs from LT-Print's layout (print.css is loaded first). */
+.pl-canvas{overflow:hidden;background:var(--desk)}
+.pl-svg{display:block;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none;outline:none}
+.pl-svg:focus-visible{box-shadow:inset 0 0 0 3px var(--sel)}
+.pl-ground{fill:#EEF1E4;stroke:#8C9A72;stroke-width:2px;vector-effect:non-scaling-stroke}
+.pl-grid{fill:none;stroke:#8C9A72;stroke-opacity:.25;stroke-width:1px}
+.pl-label{fill:#2A3340;font-weight:700;paint-order:stroke;stroke:#fff;stroke-opacity:.8;stroke-linejoin:round;pointer-events:none}
+.pl-label.note{fill:#5A3E8C}
+.pl-sel{fill:none;stroke:var(--sel,#2F7FC1);stroke-width:2px;stroke-dasharray:5 4}
+.pl-handle{fill:#fff;stroke:var(--sel,#2F7FC1);stroke-width:2px;vector-effect:non-scaling-stroke;cursor:nwse-resize}
+.pl-draft{fill:rgba(47,127,193,.12);stroke:#2F7FC1;stroke-width:2px;stroke-dasharray:6 4}
+.pl-compass .ring{fill:rgba(255,255,255,.85);stroke:#8C9A72;stroke-width:1.5}
+.pl-compass .needle{stroke:#B33A2A;stroke-width:3;stroke-linecap:round}
+.pl-compass .nlabel{font-weight:700;font-size:13px;fill:#B33A2A}
+.pl-compass .sunpath{fill:none;stroke:#E2A33B;stroke-width:2.5;stroke-dasharray:3 3}
+.pl-compass .sun{fill:#F2B43C;stroke:#B07A10}
+.pl-compass .sunlbl{font-size:11px;fill:var(--muted);font-weight:700}
+.pl-date{width:min(260px,40vw);min-height:36px}
+.pl-datelbl{min-width:96px;font-variant-numeric:tabular-nums}
+.pl-title{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-field{display:block;margin:0 0 8px}
+.pl-field input,.pl-field select{display:block;width:100%;margin-top:3px}
+.pl-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pl-block{border:1.5px solid var(--line);border-radius:12px;padding:8px;margin:0 0 8px;background:var(--paper)}
+.pl-block b{display:block}
+.pl-block .actions{margin-top:6px;gap:4px;flex-wrap:wrap}
+.btn.sm{min-height:32px;padding:0 10px;font-size:.85rem}
+.pl-mob{display:none}
+@media (max-width:760px){
+  .pl-mob{display:flex;gap:8px;justify-content:center;padding:8px;background:var(--card);border-top:1px solid var(--line)}
+  .pl-date{width:34vw}
+}
+@media (prefers-color-scheme:dark){.pl-ground{fill:#2C3328}.pl-label{fill:#F0EDE6;stroke:#1B1F24}.pl-compass .ring{fill:rgba(30,34,40,.85)}}
+.pl-ev{display:block;width:100%;text-align:left;border:0;border-left:3px solid var(--line);background:none;padding:4px 8px;margin:0 0 4px;font-size:.88rem;color:var(--ink);cursor:pointer;border-radius:0 8px 8px 0}
+.pl-ev:hover{background:var(--sunk)}
+.pl-ev.due{border-left-color:#C0602A;background:rgba(192,96,42,.08)}
+.pl-next{border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+.pl-place{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:4px 0;font-size:.88rem}
+.pl-guide{border:1.5px solid var(--line);border-radius:12px;padding:8px 10px;margin:8px 0;background:var(--paper)}
+.pl-guide p{margin:4px 0}
+.pl-warn{color:#B03A2E;font-weight:700}
+.pl-good{color:#2F7A3A}
+.pl-check{display:flex;align-items:center;gap:6px;margin:4px 0 8px}
+.pl-cross{border-color:#7A4FB5}
+.pl-hist{margin:6px 0 10px}.pl-hist p{margin:3px 0}

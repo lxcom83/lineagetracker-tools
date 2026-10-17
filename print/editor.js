@@ -307,20 +307,23 @@ export function designView(ctx) {
     f.list.splice(i, 1); f.list.splice(j, 0, f.item); ctx.commit(); draw(); refreshTree();
   }
   function group() {
-    const ids = [...S.sel]; if (ids.length < 2) { toast('Select two or more items to group them'); return; }
+    const ids = [...S.sel]; if (ids.length < 2) { toast('Select two or more items to merge them into a group'); return; }
     const order_ = flat(S.t.items).map(f => f.it.id).filter(id => S.sel.has(id));
     const first = find(S.t.items, order_[0]); const list = first.list, at = list.indexOf(first.item);
     const g = { id: uid(), type: 'group', name: 'Group', open: true, hidden: false, locked: false, off: false, children: [] };
     list.splice(at, 0, g);
     for (const id of order_) { const it = remove(S.t.items, id); if (it) g.children.push(it); }
-    pruneGroups(); ctx.commit(); refreshTree(); draw();
+    pruneGroups(); ctx.commit(); refreshTree(); draw(); refreshProps();
+    toast('Merged into a group. Rename it in the feature tree (double-click)');
   }
   function ungroup() {
     const gs = new Set(); for (const id of S.sel) { const f = find(S.t.items, id); if (f?.parent) gs.add(f.parent.id); }
     if (!gs.size) { toast('Nothing selected is in a group'); return; }
     for (const gid of gs) { const f = find(S.t.items, gid); if (!f) continue; const i = f.list.indexOf(f.item); f.list.splice(i, 1, ...f.item.children); }
-    ctx.commit(); refreshTree(); draw();
+    ctx.commit(); refreshTree(); draw(); refreshProps();
+    toast(gs.size === 1 ? 'Group split into its separate items' : `${gs.size} groups split`);
   }
+  const canDemerge = () => [...S.sel].some(id => !!find(S.t.items, id)?.parent);
   function align(how) {
     const its = selectedItems().filter(it => !lockedOf(it.id)); if (!its.length) return;
     const b = its.length > 1 ? bounds(its) : { x: 0, y: 0, r: W(), b: H() };
@@ -346,7 +349,7 @@ export function designView(ctx) {
     for (const [v, l] of [['add', 'Add'], ['starters', 'Starters']]) palTabs.append(el('button', { type: 'button', 'aria-pressed': palTab === v ? 'true' : 'false', text: l, onclick: () => { palTab = v; renderPalette(); } }));
     palBody.textContent = '';
     if (palTab === 'add') {
-      palBody.append(el('h3', { text: 'Fields from your records' }), el('p', { class: 'small muted', style: 'margin:-2px 0 8px', text: 'Drag onto the label, or tap to add. Each label fills them in from its record.' }));
+      palBody.append(el('button', { type: 'button', class: 'btn edit-all', title: 'Change the words on every text box, barcode and QR code in one window', onclick: editAllText }, [icon('text'), 'Edit all text']), el('h3', { text: 'Fields from your records' }), el('p', { class: 'small muted', style: 'margin:-2px 0 8px', text: 'Drag onto the label, or tap to add. Each label fills them in from its record.' }));
       const chips = el('div', { class: 'chips' });
       for (const f of allFields()) chips.append(paletteChip(f.label, 'field', () => newItem(f.key === 'link' ? 'qr' : 'text', f.key === 'link' ? { name: 'QR code', text: '{link}' } : { name: f.label, text: `{${f.key}}` })));
       chips.append(paletteChip('New field…', 'plus', null, async () => {
@@ -429,10 +432,37 @@ export function designView(ctx) {
     } catch { toast('That picture could not be opened'); }
   }
 
+  /* One window with every piece of text on the label (text boxes, barcodes, QR codes), for typing a packing document or any label
+     where the words matter more than the layout. Changes show on the label as you type; Done makes them one undo step. */
+  function editAllText() {
+    const rows = flat(S.t.items).filter(f => typeof f.it.text === 'string' && ['text', 'qr', 'barcode'].includes(f.it.type));
+    if (!rows.length) { toast('There is no text on the label yet. Add a Text box from the palette'); return; }
+    let changed = false;
+    const list = el('div', { class: 'eat-list' });
+    for (const f of rows) {
+      const it = f.it, multi = it.type === 'text';
+      const inp = el(multi ? 'textarea' : 'input', multi ? { rows: String(Math.min(4, Math.max(1, it.text.split('\n').length))), maxlength: '2000' } : { type: 'text', maxlength: it.type === 'qr' ? '700' : '200' });
+      inp.value = it.text;
+      const shows = el('small', { class: 'muted eat-shows' });
+      const upd = () => { const t = fill(it.text, ctx.rowFor(S.preview || 'sample-p')).text; shows.textContent = /\{[^}]+\}/.test(it.text) ? 'Shows: ' + (t || '(empty for this record)') : ''; };
+      inp.addEventListener('input', () => { it.text = inp.value; changed = true; upd(); draw(); });
+      upd();
+      const nm = it.name || TYPES[it.type], kind = it.type === 'qr' && !/qr/i.test(nm) ? ' (QR code)' : it.type === 'barcode' && !/bar/i.test(nm) ? ' (barcode)' : '';
+      const note = f.off ? ' · left out of print' : f.hidden ? ' · hidden' : '';
+      list.append(el('label', { class: 'fld eat-row' }, [el('span', { text: nm + kind + note }), inp, shows]));
+    }
+    const d = dialog('Edit all text', [
+      el('p', { class: 'hint', text: 'Type plain words to print the same on every label. A word in curly brackets, like {title}, is filled in from each record. Changes show on the label as you type.' }),
+      list,
+      el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Done', onclick: () => d.close() })]),
+    ], { wide: true, onClose: () => { if (changed) { ctx.commit('edit-all-text'); refreshTree(); refreshProps(); } } });
+  }
+
   /* ---------- feature tree ---------- */
   const treeBox = el('div');
-  const groupBtn = el('button', { type: 'button', class: 'icon-btn sm', 'aria-label': 'Group the selected items', title: 'Group (Ctrl+G)', onclick: group }, [icon('group')]);
-  const treePane = el('div', { class: 'pane tree-pane' }, [el('div', { class: 'pane-head' }, [el('h3', { text: 'Feature tree' }), groupBtn]), el('p', { class: 'small muted', style: 'margin:0 0 6px', text: 'Top of the list is in front. Eye hides while you design (it still prints). Power leaves it out of the print.' }), treeBox]);
+  const groupBtn = el('button', { type: 'button', class: 'btn sm', title: 'Merge the selected items into one group (Ctrl+G). Select two or more first.', onclick: group }, [icon('group'), 'Merge into group']);
+  const ungroupBtn = el('button', { type: 'button', class: 'btn sm', title: 'Split the selected group back into separate items (Ctrl+Shift+G)', onclick: ungroup }, ['Demerge group']);
+  const treePane = el('div', { class: 'pane tree-pane' }, [el('div', { class: 'pane-head' }, [el('h3', { text: 'Feature tree' })]), el('div', { class: 'tree-actions' }, [groupBtn, ungroupBtn]), el('p', { class: 'small muted', style: 'margin:0 0 6px', text: 'Top of the list is in front. Eye hides while you design (it still prints). Power leaves it out of the print.' }), treeBox]);
   const propsBox = el('div', { class: 'props' });
   const propsPane = el('div', { class: 'pane props-pane' }, [propsBox]);
   right.append(treePane, propsPane);
@@ -469,7 +499,7 @@ export function designView(ctx) {
       pruneGroups(); ctx.commit(); refreshTree(); draw();
     },
   });
-  function refreshTree() { tree.render(); groupBtn.disabled = S.sel.size < 2; }
+  function refreshTree() { tree.render(); groupBtn.disabled = S.sel.size < 2; ungroupBtn.disabled = !canDemerge(); }
 
   /* ---------- properties ---------- */
   function num(label, val, onIn, { step = 0.5, min = -999, max = 999, unit = 'mm' } = {}) {
@@ -573,7 +603,7 @@ export function designView(ctx) {
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Line up middles', title: 'Line up middles', onclick: () => align('m') }, [el('b', { text: 'M' })]),
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Line up bottoms', title: 'Line up bottoms', onclick: () => align('b') }, [el('b', { text: 'B' })])]));
     if (items.length > 2) propsBox.append(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Space evenly across', onclick: () => align('dh') }), el('button', { type: 'button', class: 'btn sm', text: 'Space evenly down', onclick: () => align('dv') })]));
-    propsBox.append(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Group them', onclick: group }), el('button', { type: 'button', class: 'btn sm', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn sm danger', text: 'Delete', onclick: deleteSel })]));
+    propsBox.append(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Merge into group', onclick: group }), ...(canDemerge() ? [el('button', { type: 'button', class: 'btn sm', text: 'Demerge group', onclick: ungroup })] : []), el('button', { type: 'button', class: 'btn sm', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn sm danger', text: 'Delete', onclick: deleteSel })]));
   }
   function labelProps() {
     const t = S.t;
