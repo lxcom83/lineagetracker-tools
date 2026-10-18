@@ -125,3 +125,14 @@ input[type=checkbox],input[type=radio]{width:20px;height:20px;accent-color:var(-
 .trow .flags .icon-btn.on{color:var(--sel)}
 .trow .flags .icon-btn.warn{color:var(--danger)}
 .trow input.rename{min-height:30px;padding:2px 6px;font-size:.94rem}
+
+/* expandable panel sections (kit/fold.js) */
+.fold{border-top:1px solid var(--line);padding:0}
+.fold:first-child{border-top:0}
+.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 2px;font-family:var(--f-head);font-weight:700;font-size:1.05rem;color:var(--navy);min-height:44px}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"";width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s;flex:none;margin:0 4px 0 2px}
+.fold[open]>summary::before{transform:rotate(45deg)}
+.fold>summary:focus-visible{outline:2px solid var(--navy);outline-offset:2px;border-radius:6px}
+.fold-body{padding:0 0 12px}
+.fold h3{margin:12px 0 6px}

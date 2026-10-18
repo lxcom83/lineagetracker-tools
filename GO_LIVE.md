@@ -46,6 +46,15 @@ but you (staff) can already try LT-Print. Accounts (ACCOUNTS_GO_LIVE.md) must be
    - **Print** opens the print window;
    - saving to Drive or Dropbox works, if you did step 5.
 
+## 6b. LT-Catalogue (optional, same day or later)
+
+1. Supabase, SQL Editor: paste **`22_tool_catalogue.sql`** and Run (after 13). Safe to run twice. It adds the `tools_catalogue` switch (off).
+2. Upload the tools zip (the cache name is now `lt-tools-v1.3.1`, so phones pick up the new files).
+3. Open tools.lineagetracker.org/catalogue/ as staff, try the invented seller, download the page and open it.
+4. When happy, staff Settings: switch on **tools_catalogue**.
+5. The live example is a plain file, `demo/fluffy-lemon-seeds.html`, at **tools.lineagetracker.org/demo/fluffy-lemon-seeds.html**. It needs no account, is marked noindex, and works as soon as the tools zip is uploaded. Rebuild it with `node demo/build.mjs` after any change to the catalogue page.
+6. To let an outside seller try LT-Catalogue itself, they need a free website account and `tools_catalogue` switched on (and the tools open to members, or a staff-granted preview).
+
 ## 7. Open it to members
 
 1. On the staff page, Settings, switch on **tools_print**.

@@ -305,7 +305,7 @@ export const dueSoon = (plan, today) => events(plan, addDays(today, -7)).filter(
 export function toICS(plan, from) {
   const esc = t => String(t).replace(/[\\;,]/g, m => '\\' + m).replace(/\r?\n/g, ' ');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lineage Tracker//LT-Planner//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:' + esc(plan.name)];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lineage Tracker//LT-Planner//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:' + esc(plan.name), 'X-WR-CALDESC:Powered by Lineage Tracker\\, free at lineagetracker.org'];
   for (const e of events(plan, from)) {
     const d = e.date.replace(/-/g, ''), d2 = addDays(e.date, 1).replace(/-/g, '');
     lines.push('BEGIN:VEVENT', 'UID:' + e.id + '-' + e.kind + '-' + d + '@planner.lineagetracker.org', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + d, 'DTEND;VALUE=DATE:' + d2, 'SUMMARY:' + esc(e.title), 'DESCRIPTION:' + esc('From the plan "' + plan.name + '" (LT-Planner)'));

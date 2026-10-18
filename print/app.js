@@ -4,8 +4,9 @@ import { CFG, loadConfig, el, icon, toast, dialog, confirmBox, store, gate, REAS
 import { topBar } from '../kit/bar.js';
 import { history } from '../kit/history.js';
 import { storageFor, downloadText, pickFile, dropboxHandleRedirect, dropboxSignIn, dropboxConnected, dropboxForget } from '../kit/files.js';
-import { cleanTemplate, blankTemplate, sampleRow, KINDS, EXT, FORMAT, commonValues, numberText, usedFields } from './model.js';
-import { starter, starterList } from './starters.js';
+import { cleanTemplate, blankTemplate, sampleRow, KINDS, EXT, FORMAT, commonValues, numberText, usedFields, parseTable, MAX_ASSET } from './model.js';
+import { starter, starterList, addressStarter } from './starters.js';
+import { takeHandoff, hasBrand } from '../kit/brand.js';
 import { designView, setLogo, LABEL_CSS } from './editor.js';
 import { recordsView } from './records.js';
 import { printView } from './printing.js';
@@ -44,9 +45,40 @@ let hist, design, records, printing, views = {}, titleEl, undoB, redoB;
     else if (dbx.ret.save) saveDialog('dropbox');
     else toast('Dropbox connected');
   }
+  const handoff = takeHandoff('print');
+  if (handoff && typeof handoff.csv === 'string') applyHandoff(handoff);
   if (g.preview) toast('LT-Print is not open to everyone yet. You can try it because you are staff.', 5000);
 })();
 
+/* Rows (and the seller's brand) passed over from LT-Catalogue on this device: they become a fresh branded design with the rows loaded */
+function applyHandoff(h) {
+  const { columns, rows } = parseTable(h.csv);
+  if (!columns.length || !rows.length) return;
+  const br = h.brand && typeof h.brand === 'object' ? h.brand : null;
+  const branded = !!(br && (br.name || br.logo));
+  const address = h.kind === 'address';
+  const t = address ? addressStarter(99.1, 67.7, columns) : branded ? starter('branded', 'table', 90, 55, columns) : starter('front', 'table', 60, 40, columns);
+  t.name = String(h.label || 'Catalogue labels').slice(0, 60);
+  if (address) { S.print.layout = 's8'; S.print.paper = 'a4'; savePrefs(); }
+  if (branded && !address) {
+    const logoOk = typeof br.logo === 'string' && /^data:image\/(png|jpeg|webp|gif);base64,/.test(br.logo) && br.logo.length <= MAX_ASSET * 1.37;
+    if (logoOk) t.assets.brand = br.logo;
+    for (const it of t.items) {
+      if (it.name === 'Tree logo' && logoOk) { it.asset = 'brand'; it.name = 'Your logo'; }
+      if (it.name === 'Band title' && br.name) it.text = String(br.name).slice(0, 60);
+      if (it.name === 'Band' && /^#[0-9a-fA-F]{6}$/.test(br.ink || '')) it.fill = br.ink;
+    }
+  }
+  /* the seller's labels carry the seller's brand only: no Lineage Tracker mark, address or tree */
+  t.items = t.items.filter(it => it.name !== 'Web address' && !(it.name === 'Tree logo') && !(it.name === 'Band title' && !(branded && br.name)));
+  const logoUsed = t.items.some(it => it.name === 'Your logo');
+  if (!logoUsed && t.assets) delete t.assets.logo;
+  t.own = S.t.own; t.own.on = false; t.counter = S.t.counter;
+  S.data = { source: 'table', label: t.name, rows: { table: rows }, columns };
+  S.appData = null; S.chosen = {}; S.copies = {};
+  setDoc(t, null); saveData(); go('records');
+  toast(address ? `${rows.length} order${rows.length === 1 ? '' : 's'} loaded as address labels. Pick the ones to print.` : `${rows.length} rows from LT-Catalogue are loaded. Pick the ones to print.`, 5000);
+}
 function showGate(reason) {
   const msg = REASONS[reason] || REASONS.error;
   const out = reason === 'signed_out' || reason === 'offline';

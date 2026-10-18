@@ -101,6 +101,7 @@ export function promptBox(title, label, value = '', { okText = 'OK', max = 80 } 
 /* Icons: simple strokes, drawn here so nothing loads from elsewhere. */
 const ICONS = {
   x: 'M6 6l12 12M18 6L6 18', eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z', eyeOff: 'M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.4 0 10 7 10 7a17 17 0 01-3.2 4.1M6.6 6.6C3.9 8.3 2 12 2 12s3.6 7 10 7c1.8 0 3.3-.5 4.6-1.2M9.9 9.9a3 3 0 004.2 4.2',
+  list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4', unlock: 'M6 11h12v10H6zM8 11V7a4 4 0 017.7-1.5', power: 'M12 3v9M6.3 6.3a8 8 0 1011.4 0',
   text: 'M5 6V4h14v2M12 4v16M9 20h6', field: 'M4 7h16v10H4zM8 11h4M8 14h8', qr: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2', rect: 'M4 6h16v12H4z',
   ellipse: 'M12 5c4.4 0 8 3.1 8 7s-3.6 7-8 7-8-3.1-8-7 3.6-7 8-7z', line: 'M4 18L20 6', image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5a1.5 1.5 0 100-.01', logo: 'M12 3v18M12 8l-4-3M12 8l4-3M12 13l-5-3M12 13l5-3M8 21h8',
@@ -235,7 +236,7 @@ export function turnstile(box) {
 
 /* ---------- The membership gate ---------- */
 const PASS = t => 'lt_tool_pass_' + t;
-export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, planner: { name: 'LT-Planner', path: 'planner/' } };
+export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, catalogue: { name: 'LT-Catalogue', path: 'catalogue/' }, planner: { name: 'LT-Planner', path: 'planner/' } };
 function clearPasses() { for (const t of Object.keys(TOOLS)) store.del(PASS(t)); }
 export const REASONS = {
   closed: 'This tool is not open to members yet. It will open soon.',

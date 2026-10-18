@@ -6,6 +6,7 @@ import { topBar } from '../kit/bar.js';
 import { history } from '../kit/history.js';
 import { featureTree } from '../kit/tree.js';
 import { downloadText, pickFile, readZipEntry, openProtected } from '../kit/files.js';
+import { fold, foldHeadings } from '../kit/fold.js';
 import { rowsFromApp } from '../print/model.js';
 import * as M from './model.js';
 import { DEMOS } from './demos.js';
@@ -84,9 +85,9 @@ function build() {
     menu = el('div', { class: 'kmenu', role: 'menu', style: 'left:0;right:auto' }, [
       mi('plus', 'New plan', 'Blank, or a demo plan', newDialog),
       mi('folder', 'Open a plan file…', 'A .ltplan file from this device', openFile),
-      mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify(exportPlan()))),
+      mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }))),
       el('div', { class: 'sep' }),
-      mi('upload', 'Plan for the app', 'Beds and planned sowings, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify(M.forApp(exportPlan()), null, 1))),
+      mi('upload', 'Plan for the app', 'Beds and planned sowings, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))),
     ]);
     fileWrap.append(menu); menu.querySelector('button').focus();
     const away = e => { if (menu && !menu.contains(e.target) && !fileBtn.contains(e.target)) { closeMenu(); document.removeEventListener('pointerdown', away, true); } };
@@ -113,6 +114,7 @@ function build() {
     el('h3', { text: 'Blocks' }), blocksEl,
     el('h3', { text: 'Coming up' }), calEl = el('div'),
     el('h3', { text: 'From the app' }), placesEl = el('div')]);
+  foldHeadings(left, 'planner-left', { closed: ['From the app'] });
 
   /* centre: the plan */
   dateIn = el('input', { type: 'range', min: '0', max: '364', 'aria-label': 'Date the plan shows', class: 'pl-date' });
@@ -133,7 +135,7 @@ function build() {
   const treeBox = el('div');
   propsEl = el('div');
   const right = el('aside', { class: 'pr-right', 'aria-label': 'Feature tree and properties' }, [
-    el('div', { class: 'pane tree-pane' }, [el('div', { class: 'pane-head' }, [el('h3', { text: 'Feature tree' })]), treeBox]),
+    el('div', { class: 'pane tree-pane' }, [(() => { const f = fold('planner', 'Feature tree', true); f.body.append(treeBox); return f.box; })()]),
     el('div', { class: 'pane props-pane' }, [propsEl])]);
   const mob = el('nav', { class: 'pl-mob' }, [el('button', { type: 'button', class: 'btn', text: 'Tools', onclick: () => document.body.classList.toggle('show-left') }), el('button', { type: 'button', class: 'btn', text: 'Tree and details', onclick: () => document.body.classList.toggle('show-right') })]);
   app.textContent = '';
@@ -479,15 +481,30 @@ function field(label, value, set, attrs = {}) {
   return el('label', { class: 'small pl-field' }, [label, inp]);
 }
 const numF = (label, it, key, step = 0.1, min = -10000, max = 10000) => field(label, it[key], v => { if (Number.isFinite(v)) it[key] = Math.min(max, Math.max(min, Math.round(v * 1000) / 1000)); }, { type: 'number', step: String(step), min: String(min), max: String(max), inputmode: 'decimal' });
+let cur = null, pend = null;
+const section = (title, open = true) => { pend = { title, open }; };
+const sec = (title, open = true) => () => section(title, open);
+const topLevel = () => { cur = propsEl; pend = null; };
+/* put: add to the properties panel. null and false are skipped; a section marker starts a new expandable section (made only when something goes in it). */
+const put = (...n) => {
+  for (const x of n) {
+    if (x == null || x === false) continue;
+    if (typeof x === 'function') { x(); continue; }
+    if (pend) { const f = fold('planner', pend.title, pend.open); propsEl.append(f.box); cur = f.body; pend = null; }
+    (cur || propsEl).append(x);
+  }
+};
 function drawProps() {
-  propsEl.textContent = '';
+  propsEl.textContent = ''; topLevel();
   const sel = [...S.sel].map(byId).filter(Boolean);
   if (!sel.length) {
     const s = S.plan.site;
-    propsEl.append(el('div', { class: 'pane-head' }, [el('h3', { text: 'Plan' })]),
+    put(el('div', { class: 'pane-head' }, [el('h3', { text: 'Plan' })]),
       field('Name', S.plan.name, v => { S.plan.name = String(v).slice(0, 80) || 'My plan'; }, { maxlength: '80' }),
+      sec('Size and north'),
       el('div', { class: 'pl-row' }, [numF('Width (m)', s, 'w', 1, 1, 5000), numF('Depth (m)', s, 'h', 1, 1, 5000)]),
       numF('North points (degrees, 0 = up)', s, 'north', 5, -360, 360),
+      sec('Location and planting guide'),
       el('label', { class: 'small pl-field' }, ['Country (for the planting guide)', (() => { const sl = el('select', { onchange: e => { s.country = e.target.value; s.zone = s.country === 'AU' ? zoneFromLat(s.lat) : ''; commit(); } }, [el('option', { value: '', text: 'Choose your country' })].concat(COUNTRIES.map(([v, l]) => el('option', { value: v, text: l + (PACKS[v] ? '' : ' (guide coming)') })))); sl.value = s.country; return sl; })()]),
       PACKS[s.country] ? el('label', { class: 'small pl-field' }, ['Climate zone', (() => { const sl = el('select', { onchange: e => { s.zone = e.target.value; commit(); } }, [el('option', { value: '', text: 'Choose your zone' })].concat((() => { const out = [], groups = {}; for (const [v, l, g] of PACKS[s.country].zones) { const o = el('option', { value: v, text: l }); if (!g) out.push(o); else { if (!groups[g]) { groups[g] = el('optgroup', { label: g }); out.push(groups[g]); } groups[g].append(o); } } return out; })())); sl.value = s.zone; return sl; })()]) : null,
       located() ? null : el('p', { class: 'small pl-warn', text: 'Planting guide: ' + MESSAGE }),
@@ -497,59 +514,65 @@ function drawProps() {
     return;
   }
   if (sel.length > 1) {
-    propsEl.append(el('div', { class: 'pane-head' }, [el('h3', { text: sel.length + ' selected' })]), el('div', { class: 'actions' }, [
+    put(el('div', { class: 'pane-head' }, [el('h3', { text: sel.length + ' selected' })]), el('div', { class: 'actions' }, [
       el('button', { type: 'button', class: 'btn primary', text: 'Make block', onclick: makeBlockFromSel }), el('button', { type: 'button', class: 'btn', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn', text: 'Delete', onclick: removeSel })]));
     return;
   }
   const it = sel[0], k = M.KINDS[it.kind];
-  propsEl.append(el('div', { class: 'pane-head' }, [el('h3', { text: k.name })]),
+  put(el('div', { class: 'pane-head' }, [el('h3', { text: k.name })]),
     field('Name', it.name, v => { it.name = String(v).slice(0, 60) || k.name; }, { maxlength: '60' }),
     el('label', { class: 'small pl-field' }, ['Folder', (() => { const sl = el('select', { onchange: e => { it.folder = e.target.value; commit(); } }, M.FOLDERS.map(([v, l]) => el('option', { value: v, text: l }))); sl.value = it.folder; return sl; })()]));
-  if (M.PLACE_KINDS.has(it.kind)) propsEl.append(placePicker(it));
-  if (k.box) propsEl.append(el('div', { class: 'pl-row' }, [numF('Width (m)', it, 'w', 0.1, 0.05, 2000), numF('Depth (m)', it, 'h', 0.1, 0.05, 2000)]), el('div', { class: 'pl-row' }, [numF('Centre x', it, 'x'), numF('Centre y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 5, -360, 360));
-  if (it.kind === 'bed') propsEl.append(numF('Raised (m, 0 = in the ground)', it, 'raised', 0.05, 0, 3), el('p', { class: 'small muted', text: 'Area: ' + r2(it.w * it.h) + ' m²' }));
+  if (M.PLACE_KINDS.has(it.kind)) put(placePicker(it));
+  section('Size and position');
+  if (k.box) put(el('div', { class: 'pl-row' }, [numF('Width (m)', it, 'w', 0.1, 0.05, 2000), numF('Depth (m)', it, 'h', 0.1, 0.05, 2000)]), el('div', { class: 'pl-row' }, [numF('Centre x', it, 'x'), numF('Centre y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 5, -360, 360));
+  if (it.kind === 'bed') put(numF('Raised (m, 0 = in the ground)', it, 'raised', 0.05, 0, 3), el('p', { class: 'small muted', text: 'Area: ' + r2(it.w * it.h) + ' m²' }));
+  section('Planting in this bed');
   if ((it.kind === 'bed' || it.kind === 'bench') && !S.ctx) {
     const h = M.bedHistory(items(), it);
     if (h.length) {
       const seen = new Map(); h.forEach(x => { const k = x.crop + '|' + x.sow; if (!seen.has(k)) seen.set(k, Object.assign({ n: 0 }, x)); seen.get(k).n++; });
-      propsEl.append(el('details', { class: 'pl-hist', open: h.length < 12 ? '' : null }, [el('summary', { class: 'small', text: 'Grown in this bed (' + seen.size + ')' }),
+      put(el('details', { class: 'pl-hist', open: h.length < 12 ? '' : null }, [el('summary', { class: 'small', text: 'Grown in this bed (' + seen.size + ')' }),
         ...[...seen.values()].reverse().slice(0, 30).map(x => el('p', { class: 'small' }, [el('b', { text: x.sow.slice(0, 7) }), ' ' + x.n + ' ' + M.CROPS[x.crop][0].toLowerCase() + (x.variety ? ' (' + x.variety + ')' : '') + ', ' + M.familyName(x.family)]))]));
     }
   }
-  if ((it.kind === 'bed' || it.kind === 'bench') && !located()) propsEl.append(needLocation());
+  if ((it.kind === 'bed' || it.kind === 'bench') && !located()) put(needLocation());
   if ((it.kind === 'bed' || it.kind === 'bench') && located()) {
     const crop = el('select', { 'aria-label': 'Crop to fill the bed with' }, cropOptions()); crop.value = S.crop;
     const info = el('p', { class: 'small muted' });
     const say = () => { const g = GUIDES[crop.value]; info.textContent = 'Spacing ' + Math.round(g[3] * 100) + ' cm, rows ' + Math.round(g[4] * 100) + ' cm apart. ' + seasonNote(crop.value, S.plan.date); };
     crop.addEventListener('change', say); say();
-    propsEl.append(el('div', { class: 'pl-next' }, [el('label', { class: 'small pl-field' }, ['Fill this bed with', crop]), info,
+    put(el('div', { class: 'pl-next' }, [el('label', { class: 'small pl-field' }, ['Fill this bed with', crop]), info,
       el('button', { type: 'button', class: 'btn', text: 'Fill at the guide spacing', onclick: () => { const made = M.fillBed(S.plan, items(), it.id, crop.value, S.plan.date); if (!made.length) return; S.sel = new Set(made.map(x => x.id)); commit(); toast(made.length + ' ' + M.CROPS[crop.value][0].toLowerCase() + ' plants added, sown ' + shortDay(S.plan.date) + '. Move or delete any you do not want.', 5000); } })]));
   }
-  if (it.kind === 'area') propsEl.append(field('Colour', it.fill, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.fill = v; }, { type: 'color' }));
-  if (it.kind === 'path') propsEl.append(numF('Width (m)', it, 'width', 0.1, 0.1, 20));
-  if (it.kind === 'fence') propsEl.append(numF('Height (m)', it, 'height', 0.1, 0.1, 6));
-  if (k.line) propsEl.append(el('p', { class: 'small muted', text: 'Length: ' + r2(it.pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - it.pts[i - 1][0], p[1] - it.pts[i - 1][1]) : 0), 0)) + ' m. Drag the corner squares to reshape.' }));
+  section('Look');
+  if (it.kind === 'area') put(field('Colour', it.fill, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.fill = v; }, { type: 'color' }));
+  if (it.kind === 'path') put(numF('Width (m)', it, 'width', 0.1, 0.1, 20));
+  if (it.kind === 'fence') put(numF('Height (m)', it, 'height', 0.1, 0.1, 6));
+  if (k.line) put(el('p', { class: 'small muted', text: 'Length: ' + r2(it.pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - it.pts[i - 1][0], p[1] - it.pts[i - 1][1]) : 0), 0)) + ' m. Drag the corner squares to reshape.' }));
   if (it.kind === 'plant') {
-    propsEl.append(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const c = M.CROPS[e.target.value]; Object.assign(it, { crop: e.target.value, shape: c[1], spread: c[2], height: c[3] }); commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
+    section('Crop and dates');
+    put(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const c = M.CROPS[e.target.value]; Object.assign(it, { crop: e.target.value, shape: c[1], spread: c[2], height: c[3] }); commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
       it.link ? el('p', { class: 'small pl-good', text: 'Linked to the app: ' + (((S.places.plants || []).find(p => p.id === it.link) || {}).title || 'a plant record') + '. The plan for the app refers to this record.' }) : null,
       field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }),
       el('div', { class: 'pl-row' }, [numF('Spread (m)', it, 'spread', 0.05, 0.02, 40), numF('Height (m)', it, 'height', 0.1, 0.02, 40)]),
       el('div', { class: 'pl-row' }, [field('Sow / plant', it.sow, v => { it.sow = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' }), field('Harvest', it.harvest, v => { it.harvest = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' })]),
       numF('Remind me (days before)', it, 'remind', 1, 0, 60),
       (() => { const cb = el('input', { type: 'checkbox', checked: !!it.save, onchange: e => { if (e.target.checked) it.save = true; else delete it.save; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Saving seed from this plant']); })());
+    section('Seed saving and warnings');
     { const risks = M.crossRisks(items(), it), iso = ISOLATION[it.crop];
-      if (risks.length) propsEl.append(el('div', { class: 'pl-guide pl-cross' }, [el('b', { text: 'Could cross' }),
+      if (risks.length) put(el('div', { class: 'pl-guide pl-cross' }, [el('b', { text: 'Could cross' }),
         ...risks.slice(0, 5).map(r => el('p', { class: 'small pl-warn', text: (r.may ? 'May cross with ' : 'Will cross with ') + M.CROPS[r.crop][0].toLowerCase() + (r.variety ? ' (' + r.variety + ')' : '') + ', ' + r.m + ' m away. Keep at least ' + r.need + ' m apart.' })),
         el('p', { class: 'small', text: 'Or grow them at different times, or hand-pollinate and cover the flowers.' + (r0 => r0 && r0.may ? ' Pumpkins and zucchini cross only within the same species.' : '')(risks[0]) }),
         el('p', { class: 'small muted', text: 'General seed-saving distances: insects, wind and barriers change them.' })]));
-      else if (it.save && iso && iso[1] > 0) propsEl.append(el('p', { class: 'small pl-good', text: 'Seed saving: no crossing risk in this plan (keep ' + iso[1] + ' m from other ' + M.CROPS[it.crop][0].toLowerCase() + ' varieties' + (iso[0] === 'brassica' ? ', cabbage, broccoli, cauliflower and kale' : iso[0] === 'beta' ? ', beetroot and silverbeet' : iso[0] === 'capsicum' ? ', capsicum and chilli' : '') + ').' })); }
+      else if (it.save && iso && iso[1] > 0) put(el('p', { class: 'small pl-good', text: 'Seed saving: no crossing risk in this plan (keep ' + iso[1] + ' m from other ' + M.CROPS[it.crop][0].toLowerCase() + ' varieties' + (iso[0] === 'brassica' ? ', cabbage, broccoli, cauliflower and kale' : iso[0] === 'beta' ? ', beetroot and silverbeet' : iso[0] === 'capsicum' ? ', capsicum and chilli' : '') + ').' })); }
     { const rot = M.rotationIssues(items(), it);
-      if (rot.length) propsEl.append(el('div', { class: 'pl-guide' }, [el('b', { text: 'Crop rotation' }),
+      if (rot.length) put(el('div', { class: 'pl-guide' }, [el('b', { text: 'Crop rotation' }),
         el('p', { class: 'small pl-warn', text: 'The ' + M.familyName(M.familyOf(it.crop)) + ' grew in this bed ' + rot.map(r => M.CROPS[r.crop][0].toLowerCase() + ' from ' + shortDay(r.sow) + ' ' + r.sow.slice(0, 4)).join(', ') + '.' }),
         el('p', { class: 'small', text: 'Rotate it to another bed, or wait until ' + shortDay(rot[rot.length - 1].until) + ' ' + rot[rot.length - 1].until.slice(0, 4) + ' (a ' + M.ROTATION_YEARS + '-year rotation) to keep soil pests and diseases down.' })])); }
+    section('Planting guide');
     const g = GUIDES[it.crop] || GUIDES.other, nb = M.neighbours(items(), it, S.plan.date), nm = k => (M.CROPS[k] ? M.CROPS[k][0] : k).toLowerCase();
-    if (!located()) propsEl.append(needLocation());
-    else propsEl.append(el('div', { class: 'pl-guide' }, [el('b', { text: 'Planting guide' }),
+    if (!located()) put(needLocation());
+    else put(el('div', { class: 'pl-guide' }, [el('b', { text: 'Planting guide' }),
       el('p', { class: 'small', text: 'Sow or plant: ' + monthsText(months(it.crop)) + ' (' + PACKS[S.plan.site.country].name + ', ' + PACKS[S.plan.site.country].zones.find(z => z[0] === S.plan.site.zone)[1].toLowerCase() + '). ' + (g[8] === 'seed' ? 'Sow seed where it will grow.' : g[8] === 'seedling' ? 'Best from seedlings.' : 'From seed or seedlings.') }),
       el('p', { class: 'small', text: 'Spacing ' + Math.round(g[3] * 100) + ' cm, rows ' + Math.round(g[4] * 100) + ' cm. ' + (g[7] === 'full' ? 'Full sun.' : 'Sun or part shade.') + (g[6] ? ' About ' + g[6] + ' days to harvest.' : ' Perennial.') }),
       g[10].length ? el('p', { class: 'small', text: 'Grows well near: ' + g[10].map(nm).join(', ') + '.' }) : null,
@@ -557,30 +580,32 @@ function drawProps() {
       nb.avoid.length ? el('p', { class: 'small pl-warn', text: 'Too close: ' + nb.avoid.map(nm).join(', ') + ' nearby.' }) : null,
       nb.friends.length ? el('p', { class: 'small pl-good', text: 'Good neighbours nearby: ' + nb.friends.map(nm).join(', ') + '.' }) : null,
       el('p', { class: 'small muted', text: 'A general guide: check your local guide too.' })]));
+    section('Before and after this planting');
     const L = items(), prev = it.after && L.find(x => x.id === it.after), next = L.find(x => x.after === it.id);
-    if (prev) propsEl.append(el('p', { class: 'small' }, ['Follows ', el('a', { href: '#', text: prev.name + (prev.harvest ? ' (out ' + shortDay(prev.harvest) + ')' : ''), onclick: e => { e.preventDefault(); S.sel = new Set([prev.id]); drawAll(); } })]));
-    if (next) propsEl.append(el('p', { class: 'small' }, ['Then ', el('a', { href: '#', text: next.name + ' (in ' + shortDay(next.sow) + ')', onclick: e => { e.preventDefault(); S.plan.date = next.sow; S.sel = new Set([next.id]); commit('date'); } })]));
+    if (prev) put(el('p', { class: 'small' }, ['Follows ', el('a', { href: '#', text: prev.name + (prev.harvest ? ' (out ' + shortDay(prev.harvest) + ')' : ''), onclick: e => { e.preventDefault(); S.sel = new Set([prev.id]); drawAll(); } })]));
+    if (next) put(el('p', { class: 'small' }, ['Then ', el('a', { href: '#', text: next.name + ' (in ' + shortDay(next.sow) + ')', onclick: e => { e.preventDefault(); S.plan.date = next.sow; S.sel = new Set([next.id]); commit('date'); } })]));
     else {
       const crop = el('select', { 'aria-label': 'Crop to plant next' }, cropOptions()); crop.value = it.crop === 'garlic' ? 'tomato' : 'garlic';
-      propsEl.append(el('div', { class: 'pl-next' }, [el('label', { class: 'small pl-field' }, ['When this comes out, plant next here', crop]),
+      put(el('div', { class: 'pl-next' }, [el('label', { class: 'small pl-field' }, ['When this comes out, plant next here', crop]),
         el('button', { type: 'button', class: 'btn', text: 'Plant next here', onclick: () => { const nx = M.followOn(S.plan, items(), it.id, crop.value); if (!nx) return; S.plan.date = nx.sow; S.sel = new Set([nx.id]); commit(); toast('Added: ' + nx.name + ' from ' + shortDay(nx.sow) + '. The calendar shows the swap.'); } })]));
     }
-    propsEl.append(el('p', { class: 'small muted', text: 'Move the date slider above the plan to watch it grow. Faded means not in the ground on that day.' }));
+    put(el('p', { class: 'small muted', text: 'Move the date slider above the plan to watch it grow. Faded means not in the ground on that day.' }));
   }
-  if (it.kind === 'task') propsEl.append(field('What needs doing', it.text, v => { it.text = String(v).slice(0, 200); it.name = it.text.slice(0, 60) || 'Job'; }, { maxlength: '200' }),
+  if (it.kind === 'task') put(field('What needs doing', it.text, v => { it.text = String(v).slice(0, 200); it.name = it.text.slice(0, 60) || 'Job'; }, { maxlength: '200' }),
     el('div', { class: 'pl-row' }, [field('Date', it.date, v => { it.date = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : it.date; }, { type: 'date' }),
       el('label', { class: 'small pl-field' }, ['Repeat', (() => { const sl = el('select', { onchange: e => { it.every = e.target.value; commit(); } }, [['', 'Once'], ['week', 'Every week'], ['month', 'Every month'], ['year', 'Every year']].map(([v, l]) => el('option', { value: v, text: l }))); sl.value = it.every; return sl; })()])]),
     numF('Remind me (days before)', it, 'remind', 1, 0, 60));
-  if (it.kind === 'note') propsEl.append(field('Text', it.text, v => { it.text = String(v).slice(0, 300); }, { maxlength: '300' }));
+  if (it.kind === 'note') put(field('Text', it.text, v => { it.text = String(v).slice(0, 300); }, { maxlength: '300' }));
   if (it.kind === 'block') {
     const n = M.copiesOf(S.plan, it.def);
-    propsEl.append(el('div', { class: 'pl-row' }, [numF('x', it, 'x'), numF('y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 15, -360, 360),
+    put(el('div', { class: 'pl-row' }, [numF('x', it, 'x'), numF('y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 15, -360, 360),
       el('p', { class: 'small muted', text: 'Block "' + (S.plan.blocks[it.def]?.name || '') + '", ' + n + (n === 1 ? ' copy.' : ' copies. Editing changes them all.') }),
       el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Edit block', onclick: () => editBlock(it.def) }),
         el('button', { type: 'button', class: 'btn', text: 'Explode', title: 'Turn this copy back into loose items', onclick: () => { const loose = M.explodeBlock(S.plan, it.id); S.sel = new Set(loose.map(x => x.id)); commit(); } }),
         n > 1 ? el('button', { type: 'button', class: 'btn', text: 'Make unique', title: 'Give this copy its own block, so edits stop changing the others', onclick: () => { M.makeUnique(S.plan, it.id); commit(); } }) : null]));
   }
-  propsEl.append(el('div', { class: 'actions', style: 'margin-top:12px' }, [el('button', { type: 'button', class: 'btn', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn', text: 'Delete', onclick: removeSel })]));
+  topLevel();
+  put(el('div', { class: 'actions', style: 'margin-top:12px' }, [el('button', { type: 'button', class: 'btn', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn', text: 'Delete', onclick: removeSel })]));
 }
 
 /* ---------- calendar and reminders ---------- */

@@ -1,0 +1,230 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">
+<title>Homestead goods | Bramble Hill Homestead</title><meta name="description" content="An example catalogue made with LT-Catalogue, for someone who sells things they make rather than seeds. Bramble Hill Homestead is an invented seller and nothing "><meta property="og:title" content="Homestead goods"><meta property="og:description" content="An example catalogue made with LT-Catalogue, for someone who sells things they make rather than seeds. Bramble Hill Homestead is an invented seller and nothing ">
+<style>:root{--accent:#b7791f;--accent2:#ffffff;--hero:#3b2a14;--herot:#ffffff;--ink:#3b2a14;--bg:#fbf9f5;--card:#fff;--line:#e3dccf;--muted:#5d6470;--text:#1f2b40;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#141a24;--card:#1c2433;--line:#2c3546;--muted:#a3a9b3;--text:#ece8e1;--ink:#ece8e1}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+.hero{background:linear-gradient(135deg,var(--hero),color-mix(in srgb,var(--hero) 78%,var(--accent)));color:var(--herot);border-bottom:5px solid var(--accent)}
+#lt-head{display:flex;gap:22px;align-items:center;padding:34px 0 16px}
+.brand-logo{width:104px;height:104px;object-fit:contain;flex:none;background:#fff;border-radius:22px;padding:8px;box-shadow:0 6px 22px rgba(0,0,0,.25)}
+.eyebrow{margin:0 0 4px;font-size:.85rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;opacity:.85}
+h1{margin:0 0 6px;font-size:clamp(1.9rem,5.5vw,3rem);line-height:1.05;color:inherit}
+.tag{margin:0;font-size:1.1rem;font-weight:600;opacity:.95}.meta,.intro{margin:8px 0 0;max-width:70ch;opacity:.92}
+#lt-links{display:flex;flex-wrap:wrap;gap:8px;padding:6px 0 22px}
+#lt-links a{display:inline-flex;gap:8px;align-items:center;min-height:40px;padding:0 16px;border-radius:999px;background:rgba(255,255,255,.14);border:1.5px solid rgba(255,255,255,.55);color:inherit;text-decoration:none;font-weight:700;font-size:.95rem}
+#lt-links a.main{background:var(--accent);border-color:var(--accent);color:var(--accent2)}#lt-links a:hover,#lt-links a:focus-visible{background:rgba(255,255,255,.28);outline:2px solid var(--accent2);outline-offset:2px}#lt-links a.main:hover{background:var(--accent);filter:brightness(1.08)}
+#lt-links svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#lt-chips{display:flex;gap:8px;flex-wrap:wrap;padding:14px 0 0}
+.chip{min-height:38px;padding:0 16px;border-radius:999px;border:1.5px solid var(--line);background:var(--card);color:var(--text);font:inherit;font-weight:700;font-size:.92rem;cursor:pointer}.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent2)}
+.pnote{margin:4px 0 0;color:var(--muted);font-size:.9rem}
+#lt-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 0;position:sticky;top:0;background:var(--bg);z-index:5}
+.f{display:block}.f.grow{flex:1 1 220px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+input[type=search],select,.fl input,.fl textarea{width:100%;min-height:42px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:inherit;font:inherit}
+.chk{display:flex;gap:6px;align-items:center}.count{margin:0 0 0 auto;color:var(--muted);font-size:.92rem}
+#lt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;padding:6px 0 110px}
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.04);transition:transform .15s,box-shadow .15s}.card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.12)}.ribbon.inl{position:static;align-self:flex-start;margin-bottom:4px}.ribbon{position:absolute;top:10px;left:10px;padding:3px 10px;border-radius:999px;background:var(--accent);color:var(--accent2);font-size:.78rem;font-weight:800;letter-spacing:.03em}.card.out{opacity:.65}
+.ph{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--line)}
+.body{padding:14px;display:flex;flex-direction:column;gap:4px;flex:1}.body h2{margin:0;font-size:1.15rem;color:var(--ink)}
+.sp{margin:0;font-style:italic;color:var(--muted);font-size:.9rem}.ds{margin:4px 0 0;font-size:.95rem}.fa{margin:2px 0 0;color:var(--muted);font-size:.9rem}.nt{margin:2px 0 0;font-size:.9rem;color:color-mix(in srgb,var(--accent) 55%,var(--text));font-weight:600}
+.foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:auto;padding-top:10px}.price{font-weight:800;font-size:1.05rem;color:var(--accent2);background:var(--accent);padding:2px 12px;border-radius:999px}
+.badge{font-size:.8rem;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--line)}.badge.bad{background:#a23b2a;color:#fff}
+.step{display:inline-flex;align-items:center;margin-left:auto;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+.step button{width:40px;height:40px;border:0;background:var(--card);color:inherit;font-size:1.3rem;cursor:pointer}.step output{min-width:32px;text-align:center;font-weight:700}
+.none{grid-column:1/-1;color:var(--muted)}
+#lt-order{position:fixed;left:0;right:0;bottom:0;display:flex;gap:12px;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--ink);color:var(--bg);z-index:10;font-weight:700}
+.go,.acts button{min-height:42px;padding:0 18px;border-radius:10px;border:1.5px solid var(--accent);background:var(--card);color:var(--text);font:inherit;font-weight:700;cursor:pointer}#lt-order .go,.acts .go{background:var(--accent);color:#fff;border-color:var(--accent)}
+dialog{max-width:520px;width:calc(100% - 24px);border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--text);padding:20px}dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog h2{margin:0 0 8px;color:var(--ink)}.ol{list-style:none;margin:0 0 8px;padding:0}.ol li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)}.tot{font-weight:700}
+.fl{display:block;margin:0 0 10px}.fl span{display:block;font-weight:700;font-size:.9rem;margin-bottom:3px}.hint{color:var(--muted);font-size:.9rem;margin:6px 0}.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+#terms{scroll-margin-top:70px}footer{border-top:1px solid var(--line);padding:18px 0 36px;color:var(--muted);font-size:.92rem}footer p{margin:0 0 6px;max-width:80ch}.flinks{font-weight:700}footer a{color:color-mix(in srgb,var(--accent) 55%,var(--text))}
+@media print{#lt-tools,#lt-order,.step,#lt-links,#lt-chips{display:none}.hero{background:none!important;color:#000!important;border-bottom:3px solid #000}.card{box-shadow:none}#lt-grid{grid-template-columns:repeat(2,1fr);padding-bottom:0}.card{break-inside:avoid}}</style></head><body>
+<div class="hero"><div class="wrap"><header id="lt-head"></header><nav id="lt-links" aria-label="Quick links"></nav></div></div>
+<div class="wrap"><div id="lt-tools"></div><main id="lt-grid" aria-label="Catalogue"></main>
+<footer id="terms"><p>Postage in Australia: $9 flat rate for up to 5 items. Honey and candles go out each Friday.</p><p>Posts within Australia</p><p>Example page for demonstration. Nothing is sold here.</p><p>Updated 2026-10-19. Powered by <a href="https://lineagetracker.org" rel="noopener">Lineage Tracker</a>, free at lineagetracker.org.</p></footer></div>
+<div id="lt-order" hidden></div><dialog id="lt-dlg"></dialog>
+<script type="application/json" id="lt-data">{"v":1,"brand":{"name":"Bramble Hill Homestead","tagline":"Made on our little block","logo":"data:image/png;base64,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","email":"hello@bramblehill.example.invalid","phone":"","web":"bramblehill.example.invalid","area":"Southern Highlands, NSW","social":""},"opts":{"title":"Homestead goods","intro":"An example catalogue made with LT-Catalogue, for someone who sells things they make rather than seeds. Bramble Hill Homestead is an invented seller and nothing here can be ordered.","order":"email","prices":true,"photos":true,"links":true,"jump":true,"stockMode":"limited","lowAt":5,"total":true,"priceNote":"Prices in AUD (example only)","pay":"","search":true,"sort":true,"filter":true,"instock":true,"species":true,"desc":true,"notes":true,"facts":true,"offers":true},"list":{"name":"Homestead goods","notes":"Made on our little block. Bramble Hill Homestead is a made-up seller for demonstrations; nothing here is real.","type":"sale","postage":"Postage in Australia: $9 flat rate for up to 5 items. Honey and candles go out each Friday.","postsTo":"Posts within Australia"},"sender":{"name":"Bramble Hill Homestead (example)","contact":"hello@bramblehill.example.invalid","area":"Southern Highlands, NSW"},"items":[{"key":"g1","name":"Beeswax pillar candle","variety":"","kind":"product","group":"Candles","species":"","hybrid":false,"form":"","description":"Pure beeswax, slow burning, with a soft honey scent. Poured in small batches.","bag":"1","per":"1 pillar, about 200 g","offer":"Products","price":"$14.00","available":null,"note":"Burns about 40 hours","photo":"data:image/webp;base64,UklGRnADAABXRUJQVlA4IGQDAADwJgCdASpAAfAAPpVKok0lpCMroPgIyXASiWdu4XD5Ad8meAF8JLuK96M9ADpfsiQCw/EaOMXNWmvBAbl76oN8HUgZOpAeu9mSOdQ098hp746FvkRRUe9X5+7o9N1u4DC/670Mvc9AydR/YuYE00Ceol1kLcjLrnUgZNkTLZ+UjIfasa7tvJTo9Go/joGk5Zyw72ZHL5JpP0io5ESnYkgDnsAXNMe9mSOINy+GTnZBL9ut0PuweM51DQtctd4W+4GTqOUJflJMOfQ7iJ580b2qUqMd1NEJ0AzB5iek2YGTpjSSsOZchVAC3W6H3Ucthpl/YzLZLMVZCemNSaybMPvfIW3cyoDqZ5OKhir+GozEuI0Swadxnq2ZDVoEpp9l/mE9RXRnmunI59sIP175ic9bBJxjCuK14RqqqCLnmCFSIAD+/jj74uGQwqgdeGIAvkzEAGQ+QhS1pOIeiyDRlKtJ5io1t2X9+OP+/fPl/MTxM9iufGxrcjPVecSRqol3vQn7Ko/Sx8UdRT//zHa90cA5ZRq4XU7Vk6HFCQlpaMDAA5yGF/CPP4PFEBdxN4dr5x/O44bCeiaY6+MH3tNwB2SafTfr2ctJTNdGrkPs6XE3sl5JrSEsDS36+/SL8w9GsSFN9w1relVkPGck4FBQ+IQSE/FzDbJr4u2TUBQKw1r69K/9t/00Cp739n2L5d6TNLvv3Qa0GQgc8lI2jsSihcu40SEMz8i/W6STJxcLJicoVeCsq9qSXvUAM0ABrgaNJrm+gR2k3DmPQtbPVfAP1m1WLZvgE2sVyKOi0wXAhnY79LevzIBDaCof1jE9UB81h2MkkuxAeiXgUH1LgJvJtGfVaJh0IuSNv8+a93qXGI7mpCPDeHgsnJz738RXLKHECUAlxsJrVID9XAR272s9GVmFlk6uPYlV7HdAjwCQ7k2EYTtG7Uu9pAMXvczBO2GXP6ZGLVr4iAHmdcKnmPFldcpFRajShuSNvTDWfu1+aciamiOxQbRWIAdV+62PYtzjSvZF2NmrBQ9VipD3Jc3aHZ/I1JddCbnjVblSAv5AiufIneJfEEZlGVVuGy/HdKYXypxcSak5pJf/TblB0O36d3hhMPoNITrF56voqPM8Ou/TC2cd/Tar8ecazQ0CTeXwuicAAAAA","stock":""},{"key":"g2","name":"Lavender candle in a jar","variety":"","kind":"product","group":"Candles","species":"","hybrid":false,"form":"","description":"Soy and beeswax blend with dried lavender from our garden. Jar can be reused.","bag":"1","per":"1 jar, 250 g","offer":"Products","price":"$18.00","available":null,"note":"Last few of this batch","photo":"data:image/webp;base64,UklGRhYFAABXRUJQVlA4IAoFAAAQMgCdASpAAfAAPpVKoUwlp6MiJJK42PASiWdu4WvnNeedF+Tlgv6AZze2p5470Gbxz6AHTA5ENdZRz5+uyv/Dd7JFhzHHywwv2sqZnZBioKefLuJLFl4Zhdv5hdvqS7fzC7fzC7fzC7fUl3Celr3DOwVjktiDCbb0RDDVXzW2YXb+XEylYT/RyMMDXZOkjqOHhj5wiJv0Xpojke8QppBhWCIutpeWzHWg679urVJjBA124GOqidx58rfNB7dpn/NXKrDdNlVDIZ0xz6BagmShNVsG36Bb9Ar4JGQxCBsSA8E8SSTMnp9afnhTvpMpLxVHyfTRQRH+/YeT7o3MqiIghiXkwZ5Jsvp7o0FtLx7TIbLHMZALm/LspjF8JgKLh6MOxlBkkdRvg8Mw6KZ5nFfwR7J0hl0gfMAAUT9Av4eCkusgIBAAYs8gvOQTrYC1QNv2muYzUH3EXH/ZxNbnIA5E6mpRn4+beKaVrxNsc4HjGHVwkZ3hYcJn2LqNWK/6Db05XP4bixOt8irzdlr8tiCB6v7WoOp8OjMAAP79S/PVtvHh4ndZRADQeiAAg0AkMC7mxcst1EC/zXOvy5+qccj/mK/A7oTwhSEDowLgzaOiDN8tKl8fsnRHk5/no3CfBqEd6YspJimjVEUwwa6JgdWmYkiiw1IJ8qfqEw0xJHv8p/DimLqdhp/WQyC1J1E8T3flGL4FBTD/cBIRtjCMRZwAZ1r/gptSEWzRoUclQNmD4kytXTBn7RB+lxLI8PbVhc3NeqXwHtWdJIBE+PAq181iTYmv738M3Y79KOf5VYMHZ7R4aCMtn9tqMPrTD+5dXvCwJETrPs9AjQuFtc6hJYsGpmm6cLsYMF9IEkaKy4DvkFd4QPi9ZggUaRuN1wm2vyXYXogxxB0xv2uVQpwI/+BNhapxSo4IUV1KqxFEeAj7XDfoyQtQcZ+0J6HdwTHy1WosPqTxZzus0QbxlpjapZ6k6ipHjer0zKyIR6RDjGFZrpegiw/RQAbvk6Oj6Z8UAzGFYs2ptFACXEnl94D7ghxia7QqxiSPqhH3U0Gld+4fcy1kd69k7sfc+6wadzKxjT8nPde7or5oZD7gCpMWz/k08JQBAa20Gs/309g5xGDyTFRa6fytG75gDFyFjxD/HB3R/2OGpyFVJsJEhG4+hopH/Y7Eq0QY2Hh2UmEixVuGzp789zpO3TMdU+1PRUw95pMRuL7e01nNBuEnz3aj/7qujPjcU9ByMPO+l3S8tNU9FOzHwt4e+YAAYju8bN1vXmBJwnDIa76M+0KfqJPC6k1EeizSsubSoIVyWzsS87tjbl7VYQjLHsljnD2/Hg+3JioB/tmfjKd6w2UaGelOyvtuNrEVj4HnqAbDg1vov/kc5QkqD1qiuhxt7AnJxNO6V8bVjdf9OGmpcHNsNd/Y/X4yyxAdW0zaZPp7Zd3olyy/q1v0Oc+hJXVn92dfvzx5URglnkDE/CPykhQ8xB6loHB+bwVseXeYMitkkwtxWy4gET4NzPeyFNmReP5EzOxgG/fhtqPSs6qBzr2QjgSflu6ba1KTHnAMM4bZzg1mYAYpivUkLHPjbMo0YYTchsqtfZfRo+fvMuaZ0umacg4As6Zv8R0UfT20VTK0aBa8+phKk6+y/u3yj/kmh3VNR8Qn1D0EsilDYD3zwAozRMZ/YmV7/stleVVhZZYPnBWVnmBAfYqn7gAAB+WAAAA=","stock":"low"},{"key":"g3","name":"Raw honey, 500 g","variety":"","kind":"product","group":"Honey","species":"","hybrid":false,"form":"","description":"Unheated, unfiltered honey from our own hives. Set honey, spreads easily.","bag":"1","per":"1 jar, 500 g","offer":"Products","price":"$16.00","available":0,"note":"Next harvest in autumn","photo":"data:image/webp;base64,UklGRrwFAABXRUJQVlA4ILAFAADwMQCdASpAAfAAPpVKoUwlpCMio1PJCLASiWdu4WyX++clXcwcMn/Sem7tgP1m9Xj+7ak56AH7d9c1kJwe+Jqf69NeLRMeaFfqD2BOlGKzq4SUQHBtl0ELsFhv3dIlQuri7d9t6aw3X5du+7pEqF0/+3idD/iUp+S793Qz47quLju8s9sHoA9uviLS6arLineG6/KfDPTmamjwRIYlS1vWzX3CX2f5IaI+jyt6sDHvsiRLczBChMn3RVYJ+KBr8rlt1J2WI2oT0tMBWcNmXX2X3osbTIurIx0snB76WCw3zvWStB8Bxh8tzHl/2fSMXCPlbHKLNPE6K92X2L53UYtYZFVMA5c1a7yHCzurNIyscdgcc9wDC8A2M8XUwypoOfw3X5T4Z6WOiPRkUrHJEK3gh5bT53JyzcZXeTkaTN9lywIqJrTkZ4mBXCgfnvD0YityunmeDRLYElwyi95yZ1bjJmuazDvldFVDTJZOnDKMqaBjesak4ZOWngnTs1vidO8FRlGd/mGeuHPcWhAdzVY73XYw69RPMZAA/v1sZ8GzNjB0nzlZABhwJAAFl/lkdGctYgSpOUAAfmgVxqdgQcAayS6PjvSonzuvFTGFEOaTUdGmRMy8lz6cVsbtIQwImRUire/YT+MT3H5daSqaKxXWMisuZqlyygIMIgZUxrAWtSGA7FPnpzQYTNph14dqCS0hRmjgDSTNmN0JiluLBT37mZ1idoVl3e8IroG7WMrgrf1Nh8sg/cr9nYyF7vj5rkvA69OGKgHiTsEf7xYYL685bCmFJnyVNWMfOX+Tns2VfjDmuJATDYjTUbf8Ik1drZYC7SIjwYqSotfaZcv3goZiwZLyEFeOJep0kQa00ViAZdhXpJUNpvkPW8IvKUI7HSYAl7nx+KIZa3rx956G2jxPjiv9Q+04qeRTHuSh6K822T/D2ySYGu5VC447V6wdueUW3yh/iEp08Qz+d2PRvNArfQPRIP5UEO/Gyx5OwR+5Z9s3WfAOR8P4pvNLlZ3z9fudAvEpsRV1KPPJetiV14sceUyJWNASxFNx7csZMe/vx7HmenhL7JatuSE9fDgawjyOVUw9FmwEibIuz2ct3XoKd8UOP1iyhHmza9DACHhsHvRTKyIl8b6piF3WoG/dv4zRPflzRP9WnLmRbg4sU/vkpZ434/PFC0XBhCCFh9sFrIq7K8kmA+p7nvbiJsxtSSQk/z+45wPh4R29ymxu1g4zfviZ1wvle4x3xmQume7Vt1BEvk03KfpGAEGTSkLKq+CbbVcp+W/k2yI78jHW8TKoUjuWxlko5pUv0NyHH9sIQoMOvkFtww7TN6WvJsuHcECHg0eLfdrEkXDmlzuIbxW4V/bv34r2Ukf3s3bsj1cu1fr2XjLhrBFxo7fQ1K64sBw3Z8n+YXvfsAqHPT/oW1ncysgrQj9LOM4JsF9VDAASAKkCb2NZyiClGqE6fA6Surj66wh++TZNl8MQp1GTsdkfNZJVfz4mAHPlSLa+/KYS6LMmPhffgQykoGg2EWiKxhRubPmHDiTOwPCyHadOSO6PixcntpxQfXboGV5eqpU933u2LVkXfvIbyDG5/DEesEuk+fUW0R9gfmNpRbvWygZf4DN65vMqyMiIc1T5oVR+egyJhQoUKLSs7fRjjw95tu8er6Qvz+vTR72rryo/4bJIMMMhEVjUtO0AH7vdRRV5OvBeHnGfUdf/d7NcYpQwI7WmZ2nHfsv1zBJbwOZkROf5ioach+vXLjlQc+Cz2dgwXtH3f3eJOfPyR71P4t/fFww1g/Qo4iON7s4Gnp/cwlQji/3IUgOR9MESRS6GgcT7xGiQrspGxZmF0Gpx1LA3eVIlKLi+3DE2VMtVKYjFG67TlmDIOiCMTtn9Sw9UVZLuVrM1irO4skkiVuS4LaLDobUmZ/4C/Bd+ywAAABfwAAAA","stock":"out"},{"key":"g4","name":"Raw honey, 250 g","variety":"","kind":"product","group":"Honey","species":"","hybrid":false,"form":"","description":"The same unheated honey in a handy size. Good for gifts.","bag":"1","per":"1 jar, 250 g","offer":"Products","price":"$9.00","available":null,"note":"","photo":"data:image/webp;base64,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","stock":""},{"key":"g5","name":"Goat milk soap bar","variety":"","kind":"product","group":"Soap","species":"","hybrid":false,"form":"","description":"Gentle cold-process soap made with milk from our goats. Unscented.","bag":"1","per":"1 bar, about 100 g","offer":"Products","price":"$7.00","available":null,"note":"Cured for six weeks","photo":"data:image/webp;base64,UklGRi4FAABXRUJQVlA4ICIFAADwMACdASpAAfAAPpVEnU0loyKiIXJ5oLASiWlu4W9XNebQaa2p//E6bHoyXHAAseeuaTNXRW34BFwzSguRfJci+S5gwnJGwnJGwnJGwm+NpezPxvVV+Y5gTCJ1T6IxUuRXiJaetES07zZjmBMJyRsJyRsJvjdcFsyV4qsJN+i9PcmtSPjse5GuazSlHgVhn5u6wTTQAuxj4/pEiEj2N2kNI6DcQPy0xUVQW5zzEq2RSW6vvEf1keguAP6mtnsd2gwf8YdvahLWAIl8CM4TrulwLlQO5d+8kJF1/0HOFYoJdrzPSqKFco2+6zGqZsxiVuctaiLOxmYAwm9olIPnHTura10aFvG5LlWlYOMmAHKtu2zOVcxxvv/+tyVVjad9lE86NqHY1dyzimuoRA/zt8TJ7tSWkzSvazFFnDCb42m+mgTcX0ptqkynwC6q0yIw83k32E+owZifEX42vxfAMWsHBXzjZyBQyrg/AXDKrqzG2nsoP1pUF978D+FxvqBE85cjZPtwSholepMDZ48szXGAAP7+bY/pLpc2DZB0LCAC4OCAATphaAiJy02U3rgAEl9CACWykEABpcKaYkXM6ESf5Z4bd3aBaKAGOH3qiUtmPJqYp3ls5bsNhDql8sh9n6qAyDgzhpfNS/kwF3AnOzZjxUfplEpcBkaZ3iOq/JG0nhp7EcrzxyIXEq9fnRxDM3zZtuRLmgQDuYvFIUchPdZGB16ntLd97ANDAPFzGsbaUpZVM5ToLV6TGjgQbDmoOJBV3MbX0D1K51tyaDbAYyyZB/xNWMOp7dWVGHg81qTlFrddYFNOsYoT+gEY/lP1ReyxlvS6D7Ok5XThGXI1FYubING3g8SIALLn3iSpC2oJ+FlpZYYB4WiTU+GDrH9Xi9CbUlNs6BHBndTuRRnFcdAAk+p054CulpAMwP6MWLzeX6ByY29jrjzAuMXN5fxvkKRZgW1a/X8uVrioAq63i1CisYoRGALoeWIVEZrllPM95OA2TNTmipWRJtm2JUkUKHgHbbK/4PVSrmIY4NLBVCz3vvxU9cXri4WKkAbnk+7SazDxSIYKmlR98mUNM4MeoxIRj/blIzQGR+/1eAPAMzquh/c43MvH6rab/cnL0rmPR1K6WQVjpD51eEwhtomsqnBp0kQV8AEZyUHWKm2Qws+BReHOH5jQgJn6Rhj1icl33THwXt/lu7BBH3Jna+dET7SJFwWDqsYcqzvK/iz2UCtvQ0pXVPpzFyiqvl6JBuqLe7jWJ9lktKxtOFtM5qGQaZJPl7sS3V3op/jlqnojg0FvE5T6HciOF65p2awnEFhh0YuOJrmYiUTXTABUI/uH7CHDl2cZI4Y0IMNCRrMqbVwh+UNv2EZLPdXQeOASSXnFoxlYaDXamOOYDhDCqEYIi4Bo5cP0A2cGqEFndG3BrbKaW+IKznO6q4wLKqK78Fm7GKARAXVxUjrxoGtl/dR6j7X/E6ZC5ncv/DQW/kghVa8IDZOSHVzgUJiizp4wId0YFeOGMDWtAykHmt6hTrzyLameC/xKOHGTz/PcQTvWC8sK+XtxTmqjS0tKJd9GSVorMZ4ezLCGtugERCb+8KXPa7o193YSxsm7sHDh6XpCztOszNFtWCfEAawaRs5HHSx03cnnFD3/g/ry10D16cxRyevPIyGxsm8CRr+BsV8oEttlgHmuRDBWH7giRNKKHIu323iJIfpaOkMP+oN+YmJonGzCU9Lhm9I5y+AXJ+UIAAAAAAA=","stock":""},{"key":"g6","name":"Hand-forged garden trowel","variety":"","kind":"product","group":"Garden tools","species":"","hybrid":false,"form":"","description":"Forged steel blade and a turned wooden handle. Made by a local blacksmith and built to last decades.","bag":"1","per":"1 trowel","offer":"Products","price":"$38.00","available":null,"note":"Made to order in busy weeks","photo":"data:image/webp;base64,UklGRhwFAABXRUJQVlA4IBAFAABQMACdASpAAfAAPpVKn0ylpKKiI1SoyLASiWlu4W6n++c7/xBzlK9YeP9gO0XvVheGVV/RUfJigPhqC+rC9rl3/cZJtdwrEhjuFYkMdsNNLXcKxIY7hWJDHCHgLRkJfOW+9Nxe2ICJjHcKxIY7hTLCXeW0hLLWtJ0Us/OZhTLWYj7UWWymYibnnoPtqrafCOz8Hlnc4Re1f8+uFW3/5aM8Xz/6KLhZ7CpFJtXOBX4WR7cnBQuAmuD5DNOIiNK/AMKxZeGM6kU7pzYQNmg1QnqLgv90QTuGskK4u3YOSWrdK81k9Z+5+TamHbJsBb26pvFzVe06xubEhjfXMlRHJbxxL0KqzW65uS7c3P74hB+/vwp31LXgnsnei/B8OnjHiZM8GEdQw7z+4ViQx2w1L0eaG9GAoN1t4VUxi8AgD/amGHQPmslVaPlk9GYMLkjm/UYCK0uY9mjJSN9bxgImGcg3wSNnaIR4d1hZyMyc2CXINRzpCm/85+GKe/PUdY2IwU4QPq9LHIl9VCi3AAD+/XenDJ6NJa7wSELnZXQgBKrTCABP28ATunanqy5K0xBIAAlLAnCqXnjaBq2AcOOj+lv3XdG1w5TNOLwgk/iAiEI6G2wwe2IqeAHfdsmggJGveGT4HBj16zjqY0bKbxXGKctMMvXB3hqzL58nfhEhmxlwUXO89klq5DmvZsCP0nY25XxfeyDXMZC0EbH0Of24RVvnXCw/bb9yYh+ZPaXg3CJymiIax13cWP1eqLN6HYF+SGtk7pykO5Ww/1/Ihw73PwUkfaARtGDNzjHexqTh+ATfaCbuKK+HGKQvmC2OiP8DQlbKqFSaj+LBiEK7+i1jnWYFR8el8fgbGPjGHxaOc2thOgjvoLYw+u2+PgkMjUNhDkvajnVkjJc1KdpjYngH/EpbDv4SNmd4HTA2ktsFl6eJ3j44KmPbXZaRs8SHczkhFfXvDERf9Kg3gwfU1NHxLBoFKLH+4VGP0i+hs37fG51VNQA+3Z7Hd6zumeiLVdN1O+trvC4mE7EDbhwfXpm0eb8rvAG9uBLAPod+bNuPI1TV+/Keoms3oqZXlJ2uSY3gJ3AHGtg04aW8XspS31QsdPMaM+Pf8drpRr27/AT9Tu214S6CteUv8oGmOoKby4EdOoFc7vnIgeFHrYE+ZNxf2XMQdnBkO80xybK65rRZ7bEVFA054iNQUidqQ1r7RhqF9gDtjS2Yu8izHXYSM6vvNVSSNt2ohe0mCKbOu9ktflH8DzhzWfJMuhgwLw1MuR8ivTfxBuhNbyARNuQUZ+2AAUapXt6cw6wvsr6s2UkZD/5njV5rL1ud6kIwCdXRUcr8rRVXnT/lK3W0fbtsvxMTCK1YIy6DdXqQA0Yy2MzihP5cwuXRqsbZYI0yGC42qRzvgzeuNNblnXfoW+fbuhSVJbE+TL/3MXMTgREi2VrJB4l0+wjOfBIeYbOL+MYhsnmcjP2ny/T0elvwlCSEZe4j7eBZE+WYAqLGcUmKCmzuVlCKmzQpv8zEIAXRO3kx2UVmzKCTJq4x/tgKZQOpeOF+dg5QQA9VMSvhep+1EPSKem+1EPSRjFU9IdIksm+iTYiLVScytAElZ+hnNGZbJklyZbJy5yfeGgC/xtP2LPAusSD4nDj2NCF0LUkc4avSzLQUV6qTaKEhx2LpMP+MBcRVpGk0vX6UqrTOQeAtaFTla6EbecREjCOHTRf1iIQAAF1wAAA=","stock":""}],"updated":"2026-10-19"}</script>
+<script>/* The interactive catalogue page: search, filters, quantities and an order you send by email or copy.
+   This one file runs both in the preview and inside the downloaded page. It never sends anything anywhere:
+   an order only leaves through the buyer's own email program or the clipboard. All text goes in with textContent. */
+(function () {
+  'use strict';
+  var node = document.getElementById('lt-data'); if (!node) return;
+  var D; try { D = JSON.parse(node.textContent); } catch (e) { return; }
+  var O = D.opts || {}, B = D.brand || {}, items = D.items || [];
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs) for (var k in attrs) { if (k === 'text') n.textContent = attrs[k]; else if (k === 'class') n.className = attrs[k]; else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), attrs[k]); else if (attrs[k] != null && attrs[k] !== false) n.setAttribute(k, attrs[k] === true ? '' : attrs[k]); }
+    (kids || []).forEach(function (c) { if (c != null) n.append(c.nodeType ? c : document.createTextNode(String(c))); });
+    return n;
+  }
+  var qty = {}, q = '', fType = '', fGroup = '', onlyAvail = false, sort = 'az';
+  function num(p) { var m = /(-?\d+(?:[.,]\d+)?)/.exec(String(p || '').replace(/,(?=\d{3}\b)/g, '')); return m ? parseFloat(m[1].replace(',', '.')) : null; }
+  function cur(p) { var m = /^[^\d-]*/.exec(String(p || '')); return m ? m[0].trim() : ''; }
+  var money = function (n, c) { return (c || '') + n.toFixed(2); };
+  function canOrder(it) { return O.order !== 'none' && it.available !== 0 && it.offer !== 'Info' ; }
+  function max(it) { return O.stockMode === 'exact' && typeof it.available === 'number' && it.available > 0 ? it.available : 99; }
+
+  /* header and quick links */
+  var head = $('#lt-head');
+  if (B.logo) head.append(el('img', { class: 'brand-logo', src: B.logo, alt: B.name ? B.name + ' logo' : '' }));
+  var hb = el('div', { class: 'brand-text' });
+  if (B.name) hb.append(el('p', { class: 'eyebrow', text: B.name }));
+  hb.append(el('h1', { text: O.title || (D.list && D.list.name) || 'Catalogue' }));
+  if (B.tagline) hb.append(el('p', { class: 'tag', text: B.tagline }));
+  var area = B.area || (D.sender && D.sender.area);
+  if (area) hb.append(el('p', { class: 'meta', text: area }));
+  if (O.intro) hb.append(el('p', { class: 'intro', text: O.intro }));
+  head.append(hb);
+  function ico(d) { var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); var p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p); return s; }
+  var IC = { mail: 'M3 6h18v12H3zM3 7l9 7 9-7', phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z', web: 'M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18', share: 'M4 12v7h16v-7M12 3v12M8 7l4-4 4 4', info: 'M5 4h14v16H5zM9 9h6M9 13h6M9 17h3' };
+  function webHref(v) { v = String(v || '').trim(); if (!v) return ''; if (/^https?:\/\//i.test(v)) return v; if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(\/\S*)?$/i.test(v)) return 'https://' + v; return ''; }
+  if (O.links !== false) {
+    var nav = $('#lt-links');
+    function lk(cls, icn, label, href, ext) { nav.append(el('a', { class: cls, href: href, rel: ext ? 'noopener noreferrer' : null, target: ext ? '_blank' : null }, [ico(IC[icn]), label])); }
+    var em = String(B.email || '').trim(); if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(em)) lk('main', 'mail', 'Email us', 'mailto:' + encodeURIComponent(em).replace(/%40/g, '@'));
+    var ph = String(B.phone || '').replace(/[^\d+]/g, ''); if (ph.replace(/\D/g, '').length >= 6) lk('', 'phone', 'Call ' + B.phone, 'tel:' + ph);
+    var wh = webHref(B.web); if (wh) lk('', 'web', 'Website', wh, true);
+    String(B.social || '').split(/[\s,]+/).filter(Boolean).slice(0, 6).forEach(function (tok) {
+      var h = webHref(tok); if (!h) return; var host = ''; try { host = new URL(h).hostname.replace(/^www\./, '').toLowerCase(); } catch (e) { return; }
+      var names = { 'facebook.com': 'Facebook', 'fb.com': 'Facebook', 'instagram.com': 'Instagram', 'youtube.com': 'YouTube', 'youtu.be': 'YouTube', 'tiktok.com': 'TikTok', 'x.com': 'X', 'twitter.com': 'X', 'pinterest.com': 'Pinterest', 'etsy.com': 'Etsy shop', 'ebay.com.au': 'eBay shop', 'ebay.com': 'eBay shop' };
+      var nm = ''; for (var k in names) if (host === k || host.slice(-k.length - 1) === '.' + k) { nm = names[k]; break; }
+      lk('', nm === 'Etsy shop' || nm === 'eBay shop' ? 'web' : 'share', nm || 'Follow us', h, true);
+    });
+    lk('', 'info', 'Postage and terms', '#terms');
+    var ft = document.getElementById('terms');
+    if (ft) { var fl = el('p', { class: 'flinks' }); nav.querySelectorAll('a').forEach(function (a) { var h = a.getAttribute('href'); if (/^https?:/.test(h)) fl.append(el('a', { href: h, rel: 'noopener noreferrer', target: '_blank', text: a.textContent }), ' · '); });
+      if (fl.lastChild) { fl.removeChild(fl.lastChild); ft.insertBefore(fl, ft.firstChild); } }
+  }
+
+  /* tools */
+  var types = [], groups = [];
+  items.forEach(function (it) { if (it.offer && it.offer !== 'Products' && types.indexOf(it.offer) < 0) types.push(it.offer); var g = it.group || (it.kind === 'animal' ? 'Animals' : it.kind === 'product' ? 'Products' : 'Plants'); if (groups.indexOf(g) < 0) groups.push(g); });
+  var tools = $('#lt-tools');
+  var search = el('input', { type: 'search', placeholder: 'Search the catalogue', 'aria-label': 'Search the catalogue', oninput: function () { q = this.value.toLowerCase(); draw(); } });
+  if (O.search !== false) tools.append(el('label', { class: 'f grow' }, [el('span', { class: 'sr', text: 'Search' }), search]));
+  function sel(label, opts, set) {
+    var s = el('select', { 'aria-label': label, onchange: function () { set(this.value); draw(); } }, [el('option', { value: '', text: label })]);
+    opts.forEach(function (o) { s.append(el('option', { value: o, text: o })); }); return el('label', { class: 'f' }, [s]);
+  }
+  if (types.length > 1 && O.filter !== false) tools.append(sel('All offers', types, function (v) { fType = v; }));
+  var chipBox = null;
+  if (groups.length > 1 && O.jump !== false && groups.length <= 14) {
+    chipBox = el('div', { id: 'lt-chips', role: 'group', 'aria-label': 'Categories' });
+    ['All'].concat(groups).forEach(function (g) { chipBox.append(el('button', { type: 'button', class: 'chip', 'data-g': g === 'All' ? '' : g, 'aria-pressed': g === 'All' ? 'true' : 'false', text: g, onclick: function () { fGroup = this.getAttribute('data-g'); chipBox.querySelectorAll('.chip').forEach(function (c) { c.setAttribute('aria-pressed', String(c.getAttribute('data-g') === fGroup)); }); draw(); } })); });
+  } else if (groups.length > 1) tools.append(sel('All kinds', groups, function (v) { fGroup = v; }));
+  var s2 = el('select', { 'aria-label': 'Sort', onchange: function () { sort = this.value; draw(); } }, [el('option', { value: 'az', text: 'A to Z' }), el('option', { value: 'plow', text: 'Price, low to high' }), el('option', { value: 'phigh', text: 'Price, high to low' })]);
+  if (O.prices !== false && O.sort !== false) tools.append(el('label', { class: 'f' }, [s2]));
+  if (O.instock !== false) tools.append(el('label', { class: 'chk' }, [el('input', { type: 'checkbox', onchange: function () { onlyAvail = this.checked; draw(); } }), ' In stock only']));
+  var count = el('p', { class: 'count', 'aria-live': 'polite' }); tools.append(count);
+  if (chipBox) tools.append(chipBox);
+  if (O.prices !== false && O.priceNote) tools.append(el('p', { class: 'pnote', style: 'flex-basis:100%', text: O.priceNote }));
+
+  /* cards */
+  var grid = $('#lt-grid');
+  function visible() {
+    var r = items.filter(function (it) {
+      if (fType && it.offer !== fType) return false;
+      if (fGroup && (it.group || (it.kind === 'animal' ? 'Animals' : it.kind === 'product' ? 'Products' : 'Plants')) !== fGroup) return false;
+      if (onlyAvail && it.available === 0) return false;
+      if (q && [it.name, it.variety, it.species, it.description, it.note, it.group].join(' ').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    r.sort(function (a, b) {
+      if (sort === 'az') return String(a.name).localeCompare(String(b.name));
+      var pa = num(a.price), pb = num(b.price); if (pa == null) pa = 1e9; if (pb == null) pb = 1e9;
+      return sort === 'plow' ? pa - pb : pb - pa;
+    });
+    return r;
+  }
+  function stepper(it) {
+    var k = it.key, val = el('output', { text: String(qty[k] || 0), 'aria-live': 'polite' });
+    function set(n) { n = Math.max(0, Math.min(max(it), n)); if (n) qty[k] = n; else delete qty[k]; val.textContent = String(n); bar(); }
+    return el('div', { class: 'step', role: 'group', 'aria-label': 'Quantity for ' + it.name }, [
+      el('button', { type: 'button', 'aria-label': 'One fewer', text: '−', onclick: function () { set((qty[k] || 0) - 1); } }), val,
+      el('button', { type: 'button', 'aria-label': 'One more', text: '+', onclick: function () { set((qty[k] || 0) + 1); } })]);
+  }
+  function card(it) {
+    var out = it.available === 0;
+    var c = el('article', { class: 'card' + (out ? ' out' : '') });
+    var rib = O.offers !== false && it.offer && ['Seed', 'Sell', 'Sale', 'Products'].indexOf(it.offer) < 0 ? it.offer : '';
+    if (rib && O.photos !== false && it.photo) c.append(el('span', { class: 'ribbon', text: rib }));
+    if (O.photos !== false && it.photo) c.append(el('img', { class: 'ph', src: it.photo, alt: it.name, loading: 'lazy' }));
+    var b = el('div', { class: 'body' }, [rib && !(O.photos !== false && it.photo) ? el('span', { class: 'ribbon inl', text: rib }) : null, el('h2', { text: it.name })]);
+    if (it.species && O.species !== false) b.append(el('p', { class: 'sp', text: it.species }));
+    if (it.description && O.desc !== false) b.append(el('p', { class: 'ds', text: it.description }));
+    var facts = [it.per || (it.bag ? it.bag + ' per pack' : ''), it.form, it.hybrid ? 'F1 hybrid' : ''].filter(Boolean).join(' · ');
+    if (facts && O.facts !== false) b.append(el('p', { class: 'fa', text: facts }));
+    if (it.note && O.notes !== false) b.append(el('p', { class: 'nt', text: it.note }));
+    var foot = el('div', { class: 'foot' });
+    if (O.prices !== false && it.price) foot.append(el('span', { class: 'price', text: it.price }));
+    var badge = out ? 'Sold out' : (O.stockMode === 'off' || !it.stock ? '' : (O.stockMode === 'exact' && typeof it.available === 'number' ? 'Only ' + it.available + ' left' : 'Limited supply'));
+    if (badge) foot.append(el('span', { class: 'badge' + (out ? ' bad' : ''), text: badge }));
+    if (canOrder(it)) foot.append(stepper(it));
+    b.append(foot); c.append(b); return c;
+  }
+  function draw() {
+    var r = visible(); grid.textContent = '';
+    r.forEach(function (it) { grid.append(card(it)); });
+    count.textContent = r.length + ' of ' + items.length + (items.length === 1 ? ' item' : ' items');
+    if (!r.length) grid.append(el('p', { class: 'none', text: 'Nothing matches. Try clearing the search or filters.' }));
+  }
+
+  /* the order */
+  var obar = $('#lt-order');
+  function lines() {
+    return items.filter(function (it) { return qty[it.key]; }).map(function (it) { return { it: it, n: qty[it.key], p: num(it.price) }; });
+  }
+  function total(ls) {
+    var t = 0, c = '', ok = O.prices !== false && O.total !== false && ls.length;
+    ls.forEach(function (l) { if (l.p == null || !/\d/.test(l.it.price)) { if (/^free$/i.test(l.it.price)) return; ok = false; return; } t += l.p * l.n; c = c || cur(l.it.price); });
+    return ok ? money(t, c) : '';
+  }
+  function bar() {
+    var ls = lines(), n = ls.reduce(function (a, l) { return a + l.n; }, 0);
+    obar.hidden = !n; if (!n) return;
+    obar.textContent = '';
+    var t = total(ls);
+    obar.append(el('span', { text: n + (n === 1 ? ' item' : ' items') + (t ? ' · about ' + t : '') }), el('button', { type: 'button', class: 'go', text: 'Review order', onclick: review }));
+  }
+  function orderText(who) {
+    var ls = lines(), t = total(ls), L = ['Order for ' + (B.name || (D.sender && D.sender.name) || O.title || 'the catalogue'), ''];
+    ls.forEach(function (l) { L.push(l.n + ' x ' + l.it.name + (l.it.per ? ' (' + l.it.per + ')' : '') + (O.prices !== false && l.it.price ? ', ' + l.it.price : '')); });
+    if (t) L.push('', 'Estimated total: ' + t + ' (postage extra unless stated)');
+    L.push('', 'From: ' + (who.name || ''), 'Email: ' + (who.email || ''), 'Delivery details: ' + (who.addr || ''));
+    if (who.note) L.push('', 'Note: ' + who.note);
+    return L.join('\n');
+  }
+  function review() {
+    var d = $('#lt-dlg'); d.textContent = '';
+    var ls = lines(), t = total(ls);
+    var f = {};
+    function fld(key, label, type, ph) { var i = type === 'area' ? el('textarea', { rows: '3', placeholder: ph || '' }) : el('input', { type: type || 'text', placeholder: ph || '', autocomplete: key === 'email' ? 'email' : key === 'name' ? 'name' : 'off' }); f[key] = i; return el('label', { class: 'fl' }, [el('span', { text: label }), i]); }
+    var list = el('ul', { class: 'ol' }); ls.forEach(function (l) { list.append(el('li', {}, [el('span', { text: l.n + ' × ' + l.it.name }), O.prices !== false && l.it.price ? el('span', { class: 'r', text: l.it.price }) : null])); });
+    var msg = el('p', { class: 'hint' });
+    function who() { return { name: f.name.value.trim(), email: f.email.value.trim(), addr: f.addr.value.trim(), note: f.note.value.trim() }; }
+    function need() { var w = who(); if (!w.name || !w.email) { msg.textContent = 'Please add your name and email so the seller can reply.'; return null; } if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(w.email)) { msg.textContent = 'That email address does not look right.'; return null; } msg.textContent = ''; return w; }
+    var acts = el('div', { class: 'acts' });
+    if (B.email) acts.append(el('button', { type: 'button', class: 'go', text: 'Send order by email', onclick: function () {
+      var w = need(); if (!w) return; var body = orderText(w);
+      var href = 'mailto:' + B.email + '?subject=' + encodeURIComponent('Order from ' + w.name) + '&body=' + encodeURIComponent(body);
+      if (href.length > 1900) { msg.textContent = 'This order is long for an email link. Use Copy order and paste it into an email to ' + B.email + '.'; return; }
+      location.href = href; msg.textContent = 'Your email program should open with the order ready to send.';
+    } }));
+    acts.append(el('button', { type: 'button', text: 'Copy order', onclick: function () {
+      var w = need(); if (!w) return; var body = orderText(w);
+      function done() { msg.textContent = 'Order copied.' + (B.email ? ' Paste it into an email to ' + B.email + '.' : ''); }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(body).then(done, function () { msg.textContent = 'Could not copy. Select the order text below instead.'; });
+      else msg.textContent = 'Could not copy on this browser.';
+    } }), el('button', { type: 'button', text: 'Close', onclick: function () { d.close(); } }));
+    d.append(el('h2', { text: 'Your order' }), list, t ? el('p', { class: 'tot', text: 'Estimated total: ' + t + ' (postage extra unless stated)' }) : null,
+      O.pay ? el('p', { class: 'hint', text: 'How to pay: ' + O.pay }) : null,
+      el('p', { class: 'hint', text: 'Nothing is sent from this page. Your order goes by your own email program, or you copy it.' }),
+      fld('name', 'Your name'), fld('email', 'Your email', 'email'), fld('addr', 'Delivery details', 'area', 'Where should it go?'), fld('note', 'Note for the seller (optional)', 'area'), msg, acts);
+    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+  }
+  if (O.order === 'none') obar.remove();
+  draw(); bar();
+})();
+</script>
+</body></html>

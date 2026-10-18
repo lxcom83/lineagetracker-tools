@@ -2,7 +2,9 @@
    (fields, shapes, starters), the feature tree and the properties panel. */
 import { el, icon, toast, confirmBox, uid, dialog, promptBox } from '../kit/core.js';
 import { featureTree } from '../kit/tree.js';
+import { fold, foldHeadings } from '../kit/fold.js';
 import { labelHTML, fitText, setLogo, LABEL_CSS } from './render.js';
+import { getBrand, hasBrand } from '../kit/brand.js';
 import { newItem, fieldsFor, find, remove, walk, flat, descendants, isInside, FONTS, TYPES, KINDS, MAX_ASSET, MAX_ASSETS, fill, numberText, usedFields } from './model.js';
 import { modules as barcodeModules } from '../kit/barcode.js';
 import { starter, starterList, LAYOUTS } from './starters.js';
@@ -371,8 +373,10 @@ export function designView(ctx) {
         paletteChip('Line', 'line', () => newItem('line')),
         paletteChip('Tree logo', 'logo', () => newItem('image', { name: 'Tree logo', asset: 'logo' })),
         paletteChip('Picture…', 'image', null, () => addPicture()),
+        ...brandChips(),
       );
       palBody.append(g, el('p', { class: 'small muted', style: 'margin-top:12px', text: 'Kinds of record this design is for: ' + KINDS[S.t.kind].name + '. Change it under Label (tap an empty part of the canvas).' }));
+      foldHeadings(palBody, 'print-left');
     } else {
       palBody.append(el('p', { class: 'small muted', text: 'Start from one of the app\'s sticker layouts. It replaces the current design (you can undo).' }));
       for (const s of starterList(S.t.kind)) {
@@ -415,6 +419,16 @@ export function designView(ctx) {
     });
     c.addEventListener('click', e => { if (onTap) { onTap(); return; } if (e.detail === 0) addItem(placeAt(make(), null)); });   // keyboard Enter/Space
     return c;
+  }
+  /* Pieces from the brand kit made in LT-Catalogue (kept on this device): logo, name, contact line */
+  function brandChips() {
+    const br = getBrand(); if (!hasBrand(br)) return [];
+    const out = [];
+    if (br.logo) out.push(paletteChip('Your logo', 'logo', () => { S.t.assets.brand = br.logo; return newItem('image', { name: 'Your logo', asset: 'brand' }); }));
+    if (br.name) out.push(paletteChip('Your name', 'text', () => newItem('text', { name: 'Your name', text: br.name, bold: true, color: br.ink, hideEmpty: false })));
+    const contact = [br.email, br.phone, br.web, br.social].filter(Boolean).join('  ·  ');
+    if (contact) out.push(paletteChip('Your contact', 'text', () => newItem('text', { name: 'Your contact', text: contact, hideEmpty: false })));
+    return out;
   }
   async function addPicture() {
     const f = await new Promise(res => { const i = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', style: 'display:none' }); i.addEventListener('change', () => { res(i.files[0] || null); i.remove(); }, { once: true }); document.body.append(i); i.click(); });
@@ -463,6 +477,7 @@ export function designView(ctx) {
   const groupBtn = el('button', { type: 'button', class: 'btn sm', title: 'Merge the selected items into one group (Ctrl+G). Select two or more first.', onclick: group }, [icon('group'), 'Merge into group']);
   const ungroupBtn = el('button', { type: 'button', class: 'btn sm', title: 'Split the selected group back into separate items (Ctrl+Shift+G)', onclick: ungroup }, ['Demerge group']);
   const treePane = el('div', { class: 'pane tree-pane' }, [el('div', { class: 'pane-head' }, [el('h3', { text: 'Feature tree' })]), el('div', { class: 'tree-actions' }, [groupBtn, ungroupBtn]), el('p', { class: 'small muted', style: 'margin:0 0 6px', text: 'Top of the list is in front. Eye hides while you design (it still prints). Power leaves it out of the print.' }), treeBox]);
+  { const [head, ...rest] = [...treePane.children]; const tf = fold('print', 'Feature tree', true); tf.body.append(...rest); head.remove(); treePane.append(tf.box); }
   const propsBox = el('div', { class: 'props' });
   const propsPane = el('div', { class: 'pane props-pane' }, [propsBox]);
   right.append(treePane, propsPane);
@@ -521,30 +536,37 @@ export function designView(ctx) {
     return el('label', { class: 'fld' }, [el('span', { text: label }), s]);
   }
   const live = (it, key) => v => { it[key] = v; draw(); ctx.commit('p:' + it.id + key); };
+  let cur = propsBox;
+  const put = (...n) => cur.append(...n.filter(x => x != null && x !== false));
+  const section = (title, open = true) => { const f = fold('print', title, open); put(f.box); cur = f.body; };
   function refreshProps() {
-    propsBox.textContent = ''; propsBox.oninput = null;
+    propsBox.textContent = ''; propsBox.oninput = null; cur = propsBox;
     const items = selectedItems();
     if (!items.length) return labelProps();
     if (items.length > 1) return multiProps(items);
     const it = items[0], locked = lockedOf(it.id);
     const nameIn = el('input', { type: 'text', value: it.name, maxlength: '60' });
     nameIn.addEventListener('input', () => { it.name = nameIn.value.slice(0, 60) || TYPES[it.type]; ctx.commit('name:' + it.id); refreshTree(); });
-    propsBox.append(el('div', { class: 'pane-head' }, [el('h3', { text: TYPES[it.type] }),
+    put(el('div', { class: 'pane-head' }, [el('h3', { text: TYPES[it.type] }),
       el('button', { type: 'button', class: 'icon-btn sm', 'aria-label': 'Duplicate', title: 'Duplicate (Ctrl+D)', onclick: duplicate }, [icon('copy')]),
       el('button', { type: 'button', class: 'icon-btn sm', 'aria-label': 'Delete', title: 'Delete', onclick: deleteSel }, [icon('trash')])]),
     el('label', { class: 'fld' }, [el('span', { text: 'Name in the tree' }), nameIn]));
-    if (locked) propsBox.append(el('p', { class: 'notice warn small', text: 'Locked: unlock it in the feature tree to move or change it.' }));
+    if (locked) put(el('p', { class: 'notice warn small', text: 'Locked: unlock it in the feature tree to move or change it.' }));
     const pos = el('div', { class: 'row' }, [num('X', it.x, live(it, 'x')), num('Y', it.y, live(it, 'y'))]);
     const size = el('div', { class: 'row' }, [num('Width', it.w, v => { it.w = Math.max(0.5, v); if (it.type === 'qr') it.h = it.w; draw(); ctx.commit('p:' + it.id + 'w'); drawOverlay(); }, { min: 0.5 }), num('Height', it.h, v => { it.h = Math.max(0.2, v); if (it.type === 'qr') it.w = it.h; draw(); ctx.commit('p:' + it.id + 'h'); }, { min: 0.2 })]);
     const rot = select('Rotate', String([0, 90, 180, 270].includes(((it.rot % 360) + 360) % 360) ? ((it.rot % 360) + 360) % 360 : 'other'), [['0', 'Not rotated'], ['90', '90° (reads downwards)'], ['180', 'Upside down'], ['270', '270° (reads upwards)'], ...(![0, 90, 180, 270].includes(((it.rot % 360) + 360) % 360) ? [['other', it.rot + '°']] : [])], v => { if (v !== 'other') { it.rot = +v; draw(); ctx.commit(); drawOverlay(); } });
-    propsBox.append(pos, size, rot);
+    section('Position and size');
+    put(pos, size, rot);
     if (it.type === 'text') textProps(it);
     if (it.type === 'qr') {
-      propsBox.append(el('hr'), contentField(it, 'What the QR code holds', 'Usually {link}, which opens the record in the app when scanned. It can hold any text or web address.'));
-      propsBox.append(el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Leave out when empty', it.hideEmpty, live(it, 'hideEmpty')));
+      section('What it holds');
+      put(contentField(it, 'What the QR code holds', 'Usually {link}, which opens the record in the app when scanned. It can hold any text or web address.'));
+      section('Look');
+      put(el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Leave out when empty', it.hideEmpty, live(it, 'hideEmpty')));
     }
     if (it.type === 'barcode') {
-      propsBox.append(el('hr'), contentField(it, 'What the barcode holds', 'Code 128: letters, numbers and ordinary punctuation, the barcode most scanners read for stock and shipping. Usually a tag, lot or order number.'));
+      section('What it holds');
+      put(contentField(it, 'What the barcode holds', 'Code 128: letters, numbers and ordinary punctuation, the barcode most scanners read for stock and shipping. Usually a tag, lot or order number.'));
       const info = el('p', { class: 'hint', 'aria-live': 'polite' });
       const check_ = () => {
         const v = fill(it.text, ctx.rowFor(S.preview || 'sample-p')).text.trim();
@@ -555,15 +577,18 @@ export function designView(ctx) {
         info.textContent = bar < 0.25 ? `The thinnest bars are ${bar.toFixed(2)} mm, which many scanners and printers cannot manage. Make it wider (about ${Math.ceil(n * 0.3)} mm) or shorten what it holds.` : `Thinnest bar ${bar.toFixed(2)} mm. Good for most scanners.`;
       };
       check_(); propsBox.oninput = check_;
-      propsBox.append(info, el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Show the text under the bars', it.showText, v => { it.showText = v; draw(); ctx.commit(); }), num('Text size', it.textSize, live(it, 'textSize'), { step: 0.5, min: 3, max: 40, unit: 'pt' }), check('Leave out when empty', it.hideEmpty, live(it, 'hideEmpty')), el('p', { class: 'hint', text: 'Black on white scans best. Print a test sheet and try it with your scanner or phone first.' }));
+      section('Look');
+      put(info, el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Show the text under the bars', it.showText, v => { it.showText = v; draw(); ctx.commit(); }), num('Text size', it.textSize, live(it, 'textSize'), { step: 0.5, min: 3, max: 40, unit: 'pt' }), check('Leave out when empty', it.hideEmpty, live(it, 'hideEmpty')), el('p', { class: 'hint', text: 'Black on white scans best. Print a test sheet and try it with your scanner or phone first.' }));
     }
     if (it.type === 'rect' || it.type === 'ellipse') {
-      propsBox.append(el('hr'), el('div', { class: 'colors' }, [color('Fill', it.fill, live(it, 'fill'), true), color('Outline', it.stroke, live(it, 'stroke'), true)]), num('Outline width', it.sw, live(it, 'sw'), { step: 0.1, min: 0, max: 10 }));
-      if (it.type === 'rect') propsBox.append(num('Rounded corners', it.radius, live(it, 'radius'), { step: 0.5, min: 0, max: 100 }));
+      section('Look');
+      put(el('div', { class: 'colors' }, [color('Fill', it.fill, live(it, 'fill'), true), color('Outline', it.stroke, live(it, 'stroke'), true)]), num('Outline width', it.sw, live(it, 'sw'), { step: 0.1, min: 0, max: 10 }));
+      if (it.type === 'rect') put(num('Rounded corners', it.radius, live(it, 'radius'), { step: 0.5, min: 0, max: 100 }));
     }
-    if (it.type === 'line') propsBox.append(el('hr'), el('div', { class: 'colors' }, [color('Colour', it.stroke, live(it, 'stroke'))]), num('Thickness', it.sw, live(it, 'sw'), { step: 0.1, min: 0.05, max: 10 }), check('Dashed', it.dash, live(it, 'dash')), el('p', { class: 'hint', text: 'For an upright line, choose Rotate 90°.' }));
-    if (it.type === 'image') propsBox.append(el('hr'), select('Fit', it.fit, [['contain', 'Show all of it'], ['cover', 'Fill the box (may crop)']], v => { it.fit = v; draw(); ctx.commit(); }), check('Black and white', it.gray, live(it, 'gray')));
-    propsBox.append(el('hr'), el('div', { class: 'tbtns' }, [
+    if (it.type === 'line') { section('Look'); put(el('div', { class: 'colors' }, [color('Colour', it.stroke, live(it, 'stroke'))]), num('Thickness', it.sw, live(it, 'sw'), { step: 0.1, min: 0.05, max: 10 }), check('Dashed', it.dash, live(it, 'dash')), el('p', { class: 'hint', text: 'For an upright line, choose Rotate 90°.' })); }
+    if (it.type === 'image') { section('Picture'); put(select('Fit', it.fit, [['contain', 'Show all of it'], ['cover', 'Fill the box (may crop)']], v => { it.fit = v; draw(); ctx.commit(); }), check('Black and white', it.gray, live(it, 'gray'))); }
+    section('Arrange', false);
+    put(el('div', { class: 'tbtns' }, [
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Bring forward', title: 'Bring forward ( ] )', onclick: () => order(-1) }, [icon('up')]),
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Send backward', title: 'Send backward ( [ )', onclick: () => order(1) }, [icon('down')]),
       alignBtn('alignL', 'Align left on the label', 'l'), alignBtn('alignC', 'Centre on the label', 'c'), alignBtn('alignR', 'Align right on the label', 'r')]));
@@ -584,53 +609,61 @@ export function designView(ctx) {
     return el('div', {}, [el('label', { class: 'fld', style: 'margin-bottom:4px' }, [el('span', { text: label }), ta]), el('div', { class: 'insert' }, [ins]), hint ? el('p', { class: 'hint', text: hint }) : null]);
   }
   function textProps(it) {
-    propsBox.append(el('hr'), contentField(it, 'Text', 'Words in {curly brackets} are filled in from each record. Type around them, e.g. Sown: {date}.'));
-    propsBox.append(select('Font', it.font, Object.entries(FONTS).map(([k2, f]) => [k2, f.name]), v => { it.font = v; draw(); ctx.commit(); }));
-    propsBox.append(el('div', { class: 'row' }, [num('Size', it.size, live(it, 'size'), { step: 0.5, min: 3, max: 200, unit: 'pt' }), num('Line spacing', it.lineH, live(it, 'lineH'), { step: 0.05, min: 0.8, max: 3, unit: '' })]));
+    section('Text');
+    put(contentField(it, 'Text', 'Words in {curly brackets} are filled in from each record. Type around them, e.g. Sown: {date}.'));
+    section('Font and layout');
+    put(select('Font', it.font, Object.entries(FONTS).map(([k2, f]) => [k2, f.name]), v => { it.font = v; draw(); ctx.commit(); }));
+    put(el('div', { class: 'row' }, [num('Size', it.size, live(it, 'size'), { step: 0.5, min: 3, max: 200, unit: 'pt' }), num('Line spacing', it.lineH, live(it, 'lineH'), { step: 0.05, min: 0.8, max: 3, unit: '' })]));
     const tog = (ic, label, key) => { const b = el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': it[key] ? 'true' : 'false', 'aria-label': label, title: label }, typeof ic === 'string' && ic.length > 2 ? [icon(ic)] : [el('b', { text: ic, style: key === 'italic' ? 'font-style:italic' : '' })]); b.addEventListener('click', () => { it[key] = !it[key]; b.setAttribute('aria-pressed', it[key] ? 'true' : 'false'); draw(); ctx.commit(); }); return b; };
     const alg = (ic, label, v) => { const b = el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': it.align === v ? 'true' : 'false', 'aria-label': label, title: label }, [icon(ic)]); b.addEventListener('click', () => { it.align = v; draw(); ctx.commit(); refreshProps(); }); return b; };
-    propsBox.append(el('div', { class: 'tbtns' }, [tog('B', 'Bold', 'bold'), tog('I', 'Italic', 'italic'), tog('AA', 'CAPITALS', 'upper'), alg('alignL', 'Left', 'left'), alg('alignC', 'Centre', 'center'), alg('alignR', 'Right', 'right')]));
-    propsBox.append(el('div', { class: 'row' }, [
+    put(el('div', { class: 'tbtns' }, [tog('B', 'Bold', 'bold'), tog('I', 'Italic', 'italic'), tog('AA', 'CAPITALS', 'upper'), alg('alignL', 'Left', 'left'), alg('alignC', 'Centre', 'center'), alg('alignR', 'Right', 'right')]));
+    put(el('div', { class: 'row' }, [
       select('Up and down', it.valign, [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']], v => { it.valign = v; draw(); ctx.commit(); }),
       select('When it is too long', it.fit, [['shrink', 'Shrink to fit'], ['wrap', 'Wrap onto more lines'], ['clip', 'Cut off with …']], v => { it.fit = v; draw(); ctx.commit(); })]));
-    propsBox.append(el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Leave out when its fields are empty', it.hideEmpty, live(it, 'hideEmpty')));
+    section('Colour and options');
+    put(el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Leave out when its fields are empty', it.hideEmpty, live(it, 'hideEmpty')));
   }
   function multiProps(items) {
-    propsBox.append(el('h3', { text: `${items.length} items selected` }), el('p', { class: 'hint', text: 'Drag any of them to move them together.' }));
-    propsBox.append(el('span', { class: 'lbl', text: 'Line up' }), el('div', { class: 'tbtns' }, [
+    put(el('h3', { text: `${items.length} items selected` }), el('p', { class: 'hint', text: 'Drag any of them to move them together.' }));
+    put(el('span', { class: 'lbl', text: 'Line up' }), el('div', { class: 'tbtns' }, [
       alignBtn('alignL', 'Line up left edges', 'l'), alignBtn('alignC', 'Line up centres', 'c'), alignBtn('alignR', 'Line up right edges', 'r'),
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Line up tops', title: 'Line up tops', onclick: () => align('t') }, [el('b', { text: 'T' })]),
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Line up middles', title: 'Line up middles', onclick: () => align('m') }, [el('b', { text: 'M' })]),
       el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Line up bottoms', title: 'Line up bottoms', onclick: () => align('b') }, [el('b', { text: 'B' })])]));
-    if (items.length > 2) propsBox.append(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Space evenly across', onclick: () => align('dh') }), el('button', { type: 'button', class: 'btn sm', text: 'Space evenly down', onclick: () => align('dv') })]));
-    propsBox.append(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Merge into group', onclick: group }), ...(canDemerge() ? [el('button', { type: 'button', class: 'btn sm', text: 'Demerge group', onclick: ungroup })] : []), el('button', { type: 'button', class: 'btn sm', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn sm danger', text: 'Delete', onclick: deleteSel })]));
+    if (items.length > 2) put(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Space evenly across', onclick: () => align('dh') }), el('button', { type: 'button', class: 'btn sm', text: 'Space evenly down', onclick: () => align('dv') })]));
+    put(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Merge into group', onclick: group }), ...(canDemerge() ? [el('button', { type: 'button', class: 'btn sm', text: 'Demerge group', onclick: ungroup })] : []), el('button', { type: 'button', class: 'btn sm', text: 'Duplicate', onclick: duplicate }), el('button', { type: 'button', class: 'btn sm danger', text: 'Delete', onclick: deleteSel })]));
   }
   function labelProps() {
     const t = S.t;
-    propsBox.append(el('h3', { text: 'Label' }), el('p', { class: 'hint', text: 'Nothing selected. These settings are for the whole label.' }));
+    put(el('h3', { text: 'Label' }), el('p', { class: 'hint', text: 'Nothing selected. These settings are for the whole label.' }));
+    section('Design');
     const nm = el('input', { type: 'text', value: t.name, maxlength: '80' });
     nm.addEventListener('input', () => { t.name = nm.value.slice(0, 80) || 'Untitled design'; ctx.commit('lname'); ctx.refreshTitle(); });
-    propsBox.append(el('label', { class: 'fld' }, [el('span', { text: 'Design name' }), nm]));
-    propsBox.append(select('Records it is for', t.kind, Object.entries(KINDS).map(([k2, v]) => [k2, v.name]), v => { t.kind = v; S.preview = ''; ctx.commit(); ctx.refreshAll(); }));
-    if (t.kind === 'table') propsBox.append(el('p', { class: 'hint', text: t.columns.length ? 'Columns: ' + t.columns.join(', ') : 'Open your spreadsheet in step 2 (Records) and its columns appear in the palette.' }));
+    put(el('label', { class: 'fld' }, [el('span', { text: 'Design name' }), nm]));
+    put(select('Records it is for', t.kind, Object.entries(KINDS).map(([k2, v]) => [k2, v.name]), v => { t.kind = v; S.preview = ''; ctx.commit(); ctx.refreshAll(); }));
+    if (t.kind === 'table') put(el('p', { class: 'hint', text: t.columns.length ? 'Columns: ' + t.columns.join(', ') : 'Open your spreadsheet in step 2 (Records) and its columns appear in the palette.' }));
+    section('Size');
     const sz = (key, v) => { t[key] = Math.min(600, Math.max(key === 'w' ? 10 : 5, v)); ctx.commit('lsize'); layout(); draw(); if (S.zoomFit) fitZoom(); };
-    propsBox.append(el('div', { class: 'row' }, [num('Width', t.w, v => sz('w', v), { min: 10, max: 600 }), num('Height', t.h, v => sz('h', v), { min: 5, max: 600 })]));
+    put(el('div', { class: 'row' }, [num('Width', t.w, v => sz('w', v), { min: 10, max: 600 }), num('Height', t.h, v => sz('h', v), { min: 5, max: 600 })]));
     const sizes = [];
     for (const L of Object.values(LAYOUTS)) for (const s of L.sizes) if (!sizes.some(x => x[0] === s[0] && x[1] === s[1])) sizes.push(s);
-    propsBox.append(select('Common sizes', '', [['', 'Pick a size…'], ...sizes.map(s => [s[0] + 'x' + s[1], `${s[0]} × ${s[1]} mm`])], v => { if (!v) return; const [w, h] = v.split('x').map(Number); t.w = w; t.h = h; ctx.commit(); refreshProps(); layout(); draw(); S.zoomFit = true; fitZoom(); }));
-    propsBox.append(el('div', { class: 'colors' }, [color('Background', t.bg, v => { t.bg = v; draw(); ctx.commit('lbg'); })]), num('Rounded corners (preview only)', t.radius, v => { t.radius = v; draw(); ctx.commit('lrad'); }, { min: 0, max: 50 }));
+    put(select('Common sizes', '', [['', 'Pick a size…'], ...sizes.map(s => [s[0] + 'x' + s[1], `${s[0]} × ${s[1]} mm`])], v => { if (!v) return; const [w, h] = v.split('x').map(Number); t.w = w; t.h = h; ctx.commit(); refreshProps(); layout(); draw(); S.zoomFit = true; fitZoom(); }));
+    section('Look');
+    put(el('div', { class: 'colors' }, [color('Background', t.bg, v => { t.bg = v; draw(); ctx.commit('lbg'); })]), num('Rounded corners (preview only)', t.radius, v => { t.radius = v; draw(); ctx.commit('lrad'); }, { min: 0, max: 50 }));
     // numbering
     const c = t.counter, ex = el('p', { class: 'hint' });
     const showEx = () => { ex.textContent = `Labels will be numbered ${numberText(c, 0)}, ${numberText(c, 1)}, ${numberText(c, 2)}… Put {number} in any text box or barcode (it is in the palette as "Number (counts up)").`; };
     const cset = (k, v) => { c[k] = v; showEx(); draw(); ctx.commit('counter' + k); };
     const txt = (label, k) => { const i = el('input', { type: 'text', value: c[k], maxlength: '20' }); i.addEventListener('input', () => cset(k, i.value.replace(/[{}]/g, ''))); return el('label', { class: 'fld' }, [el('span', { text: label }), i]); };
-    propsBox.append(el('hr'), el('h3', { text: 'Numbering' }), el('div', { class: 'row' }, [txt('Before', 'prefix'), num('Start at', c.start, v => cset('start', Math.round(v)), { step: 1, min: 0, max: 99999999, unit: '' }), txt('After', 'suffix')]),
+    section('Numbering', false);
+    put(el('div', { class: 'row' }, [txt('Before', 'prefix'), num('Start at', c.start, v => cset('start', Math.round(v)), { step: 1, min: 0, max: 99999999, unit: '' }), txt('After', 'suffix')]),
       el('div', { class: 'row' }, [num('Digits', c.digits, v => cset('digits', Math.round(v)), { step: 1, min: 1, max: 10, unit: '' }), num('Count by', c.step, v => cset('step', Math.round(v)), { step: 1, min: 1, max: 1000, unit: '' })]),
       check('Each copy gets its own number', c.perCopy, v => cset('perCopy', v)), ex);
     showEx();
-    propsBox.append(el('hr'), check('Fold-over: print an upside-down copy below a fold line', t.fold.on, v => { t.fold.on = v; ctx.commit(); refreshProps(); layout(); draw(); if (S.zoomFit) fitZoom(); }));
-    if (t.fold.on) propsBox.append(select('Gap for the fold', String(t.fold.gap), [['2', '2 mm (thin wire)'], ['5', '5 mm (stake or tube)'], ['10', '10 mm (thick stake)']], v => { t.fold.gap = +v; ctx.commit(); layout(); draw(); }));
-    propsBox.append(el('hr'), select('Grid', String(S.grid), [['0.5', '0.5 mm'], ['1', '1 mm'], ['2', '2 mm'], ['5', '5 mm']], v => { S.grid = +v; ctx.savePrefs(); drawOverlay(); }), el('p', { class: 'hint', text: 'Hold Alt while dragging to place freely. Arrow keys move by 0.5 mm, with Shift by 5 mm.' }));
+    section('Fold-over and grid', false);
+    put(check('Fold-over: print an upside-down copy below a fold line', t.fold.on, v => { t.fold.on = v; ctx.commit(); refreshProps(); layout(); draw(); if (S.zoomFit) fitZoom(); }));
+    if (t.fold.on) put(select('Gap for the fold', String(t.fold.gap), [['2', '2 mm (thin wire)'], ['5', '5 mm (stake or tube)'], ['10', '10 mm (thick stake)']], v => { t.fold.gap = +v; ctx.commit(); layout(); draw(); }));
+    put(select('Grid', String(S.grid), [['0.5', '0.5 mm'], ['1', '1 mm'], ['2', '2 mm'], ['5', '5 mm']], v => { S.grid = +v; ctx.savePrefs(); drawOverlay(); }), el('p', { class: 'hint', text: 'Hold Alt while dragging to place freely. Arrow keys move by 0.5 mm, with Shift by 5 mm.' }));
   }
 
   /* the record's fields, plus any the person made up by typing {Something} in a text box */

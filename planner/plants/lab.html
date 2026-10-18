@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plant lab (internal)</title><meta name="robots" content="noindex">
+<style>body{margin:0;font:14px system-ui;background:#1d2b1d;color:#eee}#bar{padding:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:#122012}canvas{display:block;width:100%;height:calc(100vh - 90px)}label{display:flex;gap:4px;align-items:center}#st{font-family:monospace;padding:0 8px}</style></head><body>
+<div id="bar"><b>Plant lab</b>
+<label>Growth <input id="stage" type="range" min="0.1" max="1" step="0.05" value="1"></label>
+<label>Sun direction <input id="az" type="range" min="0" max="360" value="225"></label>
+<label>Sun height <input id="el" type="range" min="15" max="80" value="45"></label>
+<label>Show <select id="only"><option value="all">All plants</option><option value="fruits">Fruit close-up</option><option value="garden">Garden sample (structures)</option></select></label>
+<label>View <select id="view"><option value="top">Overhead</option><option value="side">Side</option><option value="iso">Isometric</option></select></label>
+<label><input id="sh" type="checkbox" checked>Shadows</label>
+<label>Stress <select id="n"><option>1</option><option>50</option><option>200</option><option>1000</option></select></label>
+<span id="st"></span></div><canvas id="c"></canvas>
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+import {build as buildStruct} from './structures.js';
+import {PRESETS,generate,stats,fruitGeometry} from './plants.js';
+const cv=document.getElementById('c'), r=new THREE.WebGLRenderer({canvas:cv,antialias:true,preserveDrawingBuffer:true});
+r.shadowMap.enabled=true; r.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene(); scene.background=new THREE.Color('#5b4a36');
+const sun=new THREE.DirectionalLight('#fff3dc',2.4); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); scene.add(sun,new THREE.HemisphereLight('#cfe8ff','#4a3a28',1.1));
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshStandardMaterial({color:'#6d5a40'})); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+const mat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:0.8,flatShading:false});
+const cam=new THREE.OrthographicCamera(-1,1,1,-1,0.1,200); cam.position.set(0,60,0); cam.up.set(0,0,-1); cam.lookAt(0,0,0);
+let group=new THREE.Group(); scene.add(group); const names=Object.keys(PRESETS); const only_=document.getElementById('only'); names.forEach(k=>only_.add(new Option(k,k)));
+const V3=(x,y,z)=>new THREE.Vector3(x,y,z); let spanX=1,spanZ=1; var view_;
+function build(){
+  scene.remove(group); group.traverse(o=>{if(o.geometry)o.geometry.dispose();}); group=new THREE.Group(); scene.add(group);
+  const stage=+stage_.value, N=+n_.value; let tris=0, t0=performance.now();
+  const sh=document.getElementById('sh').checked; r.shadowMap.enabled=sh; sun.castShadow=sh;
+  if(N===1 && only_.value==='garden'){
+    const put=(o,x,z,ry=0)=>{ o.position.set(x,0,z); o.rotation.y=ry; group.add(o); return o; };
+    const plant=(k,x,z,ry=0,sc=1)=>{ const g=generate(PRESETS[k],stage); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; m.scale.setScalar(sc); put(m,x,z,ry); };
+    const gnd=new THREE.Mesh(new THREE.PlaneGeometry(14,10),new THREE.MeshStandardMaterial({color:'#5f7a3c'})); gnd.rotation.x=-Math.PI/2; gnd.position.y=0.002; gnd.receiveShadow=true; group.add(gnd);
+    put(buildStruct({type:'paling',length:12,height:1.5}),0,-4.6);
+    put(buildStruct({type:'trellis',width:2.6,height:1.9}),-3.6,-4.3);
+    put(buildStruct({type:'fence',length:4,height:1.3}),4.2,-3.8,0.0);
+    put(buildStruct({type:'path',length:9,kind:'pavers'}),0,1.6);
+    put(buildStruct({type:'raisedBed',width:3,depth:1.3}),-3.8,-1.6);
+    put(buildStruct({type:'raisedBed',width:3,depth:1.3}),-0.3,-1.6);
+    put(buildStruct({type:'aframe',width:2,height:1.7,depth:1.5}),3.6,-1.6);
+    put(buildStruct({type:'tank',radius:0.7,height:1.6}),5.8,-3.2);
+    put(buildStruct({type:'compost',width:1}),5.6,-1.0);
+    put(buildStruct({type:'greenhouse',width:2.8,length:4}),5.0,1.9,Math.PI/2);
+    plant('tomato',-4.5,-1.6); plant('tomato',-3.8,-1.6); plant('tomato',-3.1,-1.6);
+    plant('pumpkinVine',-1.3,-1.6,0,0.55); plant('corn',-0.1,-1.9); plant('corn',0.4,-1.3); plant('sunflower',0.9,-1.7);
+    plant('pumpkinVine',-2.2,3.4,2.5,0.7); plant('appleTree',-5,2.2,0,0.7);
+    window.lab.focus={cx:0.5,cy:0.4,cz:-0.5,ext:7.3}; spanX=14; spanZ=10; }
+  else if(N===1 && only_.value==='fruits'){ const ks=names.filter(k=>PRESETS[k].fruit&&PRESETS[k].fruit.count); ks.forEach((k,i)=>{ const g=fruitGeometry(PRESETS[k]); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; const fs=PRESETS[k].fruit; m.scale.setScalar(fs.shape.kind==='head'?1.0/fs.size:0.9/(fs.size*Math.max(fs.shape.height,0.35))); m.position.set(i*1.6-(ks.length-1)*0.8,0,0); group.add(m); });
+    window.lab.focus={cx:0,cy:0.4,cz:0,ext:ks.length*0.34}; spanX=ks.length*1.7; spanZ=1.5; }
+  else if(N===1 && only_.value!=='all'){ const g=generate(PRESETS[only_.value],stage); tris=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; group.add(m);
+    g.computeBoundingBox(); const bb=g.boundingBox, ext=Math.max(bb.max.x-bb.min.x,bb.max.z-bb.min.z,bb.max.y)*0.6+0.3; window.lab.focus={cx:(bb.max.x+bb.min.x)/2,cy:(bb.max.y)/2,cz:(bb.max.z+bb.min.z)/2,ext}; spanX=ext*1.3; spanZ=ext; }
+  else if(N===1){ window.lab.focus=null; names.forEach((k,i)=>{ const g=generate(PRESETS[k],stage); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; if(view_.value==='top') m.position.set((i%4)*9-13.5,0,Math.floor(i/4)*11-5.5); else m.position.set(i*7-24.5,0,0); group.add(m); }); spanX=view_.value==='top'?19:30; spanZ=view_.value==='top'?12:6; }
+  else { // many plants: 3 variants shared across instances (instancing)
+    const keys=['tomato','pumpkinVine','appleTree','corn']; const per=Math.ceil(N/keys.length), side=Math.ceil(Math.sqrt(N)); let idx=0;
+    keys.forEach((k,ki)=>{ const g=generate(PRESETS[k],stage), q=generate(PRESETS[k],stage); tris+=stats(g).tris; const im=new THREE.InstancedMesh(g,mat,per); im.castShadow=im.receiveShadow=true; const mm=new THREE.Matrix4();
+      for(let j=0;j<per;j++){ const i=idx++; mm.compose(new THREE.Vector3((i%side)*2.2-side*1.1,0,Math.floor(i/side)*2.2-side*1.1),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),j*1.7),new THREE.Vector3(1,1,1)); im.setMatrixAt(j,mm);} group.add(im); });
+    tris*=per; spanX=side*1.1+2; spanZ=side*1.1+2;
+  }
+  const bt=performance.now()-t0; window.lab.buildMs=bt; window.lab.tris=tris;
+  const a=cv.clientWidth/cv.clientHeight; let hh=Math.max(spanZ,spanX/a); const v=view_.value;
+  const F=window.lab.focus; if(N===1&&F){ const c=V3(F.cx,F.cy,F.cz); const dirs={top:[0,60,0.001],side:[0,0,60],iso:[40,34,40]}[v]; cam.position.set(c.x+dirs[0],c.y+dirs[1],c.z+dirs[2]); cam.up.set(0,v==='top'?0:1,v==='top'?-1:0); cam.lookAt(c); hh=F.ext; }
+  else if(v==='top'||N>1){cam.position.set(0,60,0);cam.up.set(0,0,-1);cam.lookAt(0,0,0);}
+  else if(v==='side'){cam.position.set(0,3,60);cam.up.set(0,1,0);cam.lookAt(0,3,0);hh=Math.max(4.5,spanX/a);}
+  else {cam.position.set(40,34,40);cam.up.set(0,1,0);cam.lookAt(0,2,0);hh=Math.max(13,spanX/a);} cam.left=-hh*a; cam.right=hh*a; cam.top=hh; cam.bottom=-hh; cam.updateProjectionMatrix();
+  const az=+az_.value*Math.PI/180, el=+el_.value*Math.PI/180, R=30; sun.position.set(Math.cos(az)*Math.cos(el)*R,Math.sin(el)*R,Math.sin(az)*Math.cos(el)*R);
+  sun.shadow.camera.left=-hh*a-5; sun.shadow.camera.right=hh*a+5; sun.shadow.camera.top=hh+5; sun.shadow.camera.bottom=-hh-5; sun.shadow.camera.far=120; sun.shadow.camera.updateProjectionMatrix();
+  r.setSize(cv.clientWidth,cv.clientHeight,false); r.render(scene,cam);
+  st.textContent=`${N} plants · ${Math.round(tris).toLocaleString()} triangles · build ${bt.toFixed(0)} ms`;
+}
+view_=document.getElementById('view'); const stage_=document.getElementById('stage'),az_=document.getElementById('az'),el_=document.getElementById('el'),n_=document.getElementById('n'),st=document.getElementById('st');
+window.lab={build,fps:(frames=60)=>new Promise(res=>{let c=0,t=performance.now();(function f(){r.render(scene,cam);if(++c<frames)requestAnimationFrame(f);else res(frames/((performance.now()-t)/1000));})();})};
+document.getElementById('bar').addEventListener('input',build); addEventListener('resize',build); build();
+</script></body></html>

@@ -72,3 +72,23 @@ export function starterList(kind) {
   for (const [k, L] of Object.entries(LAYOUTS)) for (const [w, h, sheet] of L.sizes) out.push({ layout: k, kind, w, h, sheet: sheet || '', name: L.name, desc: L.desc, size: `${w} × ${h} mm${sheet ? ' · ' + SHEETS[sheet].name.split(' (')[0] : ''}` });
   return out;
 }
+
+/* Address label for parcels, made from LT-Catalogue orders. Carries the seller's own details only: no Lineage Tracker marks. */
+export function addressStarter(w = 99.1, h = 67.7, columns = []) {
+  const t = blankTemplate(w, h, 'table');
+  t.name = `Address label ${r2(w)} × ${r2(h)} mm`; t.columns = columns.slice();
+  const pad = h < 40 ? 2.5 : 4, smallPt = Math.max(5.5, Math.min(8, 4 + h * 0.06)), bigPt = Math.max(9, Math.min(16, 5 + h * 0.15));
+  const sH = mm(smallPt) * 1.35, bH = mm(bigPt) * 1.3, iw = w - 2 * pad, items = [];
+  const text = (name, tpl, y, hh, pt, extra = {}) => items.push(newItem('text', { name, text: tpl, x: r2(pad), y: r2(y), w: r2(iw), h: r2(hh), size: r2(pt), ...extra }));
+  let y = pad;
+  text('From', '{From}', y, sH, smallPt, { bold: true, color: '#444444' }); y += sH;
+  text('From address', '{From address}', y, sH, smallPt, { color: '#444444' }); y += sH + 1;
+  items.push(newItem('rect', { name: 'Divider', x: r2(pad), y: r2(y), w: r2(iw), h: 0.3, fill: '#999999', locked: false })); y += 3;
+  text('Name', '{Name}', y, bH * 1.1, bigPt * 1.15, { bold: true, color: '#000000' }); y += bH * 1.1;
+  text('Street', '{Street}', y, bH, bigPt, { color: '#000000' }); y += bH;
+  text('Place', '{Place}', y, bH, bigPt, { color: '#000000' }); y += bH;
+  text('Country', '{Country}', y, bH, bigPt, { color: '#000000', bold: true });
+  text('Order and phone', '{Order}   {Phone}', h - pad - sH, sH, smallPt, { color: '#444444' });
+  t.items = items.reverse();
+  return t;
+}
