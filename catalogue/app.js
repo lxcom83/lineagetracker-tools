@@ -9,11 +9,13 @@ import { fold } from '../kit/fold.js';
 import { readCatalogue, buildPage, csvRows } from './template.js';
 import { SAMPLE, SAMPLE_BRAND, SAMPLE_GOODS, SAMPLE_GOODS_BRAND } from './sample.js';
 import { viewOrders } from './orders.js';
+import { viewStock, baseOf, cleanBase, mergeIncoming, changedCount } from './stock.js';
+import { viewPrint } from './printjobs.js';
 
 const app = document.getElementById('app');
 const K = { idx: 'ltcat_idx', cur: 'ltcat_cur', p: id => 'ltcat_p_' + id, old: ['ltcat_cat', 'ltcat_opts', 'ltcat_url'] };
-const DEF = () => ({ title: '', intro: '', terms: '', order: 'email', prices: true, photos: true, photoSize: 'asis' });
-const S = { cat: null, brand: getBrand(), opts: DEF(), step: 'load', url: '', runtime: '', id: '', lib: [], orders: [] };
+const DEF = () => ({ title: '', intro: '', terms: '', order: 'email', prices: true, photos: true, photoSize: 'asis', master: 'app' });
+const S = { cat: null, brand: getBrand(), opts: DEF(), step: 'load', url: '', runtime: '', id: '', lib: [], orders: [], base: {} };
 const newId = () => Math.random().toString(36).slice(2, 10);
 const validCat = c => !!(c && Array.isArray(c.items) && c.items.length && c.list && c.sender);
 /* Several catalogues are kept on this device. The page and all choices belong to the catalogue; the brand is shared by all of them. */
@@ -35,23 +37,24 @@ function libLoad() {
 }
 function openProject(id) {
   S.id = id; const p = id ? store.get(K.p(id), null) : null;
-  if (p && validCat(p.cat)) { S.cat = p.cat; S.opts = Object.assign(DEF(), p.opts || {}); S.url = p.url || ''; S.orders = Array.isArray(p.orders) ? p.orders : []; } else { S.cat = null; S.opts = DEF(); S.url = ''; S.orders = []; }
+  if (p && validCat(p.cat)) { S.cat = p.cat; S.opts = Object.assign(DEF(), p.opts || {}); S.url = p.url || ''; S.orders = Array.isArray(p.orders) ? p.orders : []; S.base = cleanBase(p.base, p.cat); } else { S.cat = null; S.opts = DEF(); S.url = ''; S.orders = []; S.base = {}; }
   if (id) store.set(K.cur, id);
 }
 function saveProject(touch = true) {
   if (!S.id) return true;
-  const ok = store.set(K.p(S.id), { cat: S.cat, opts: S.opts, url: S.url, orders: S.orders });
+  const ok = store.set(K.p(S.id), { cat: S.cat, opts: S.opts, url: S.url, orders: S.orders, base: S.base });
   const m = S.lib.find(x => x.id === S.id);
   if (m) { m.name = S.opts.title || (S.cat && S.cat.list.name) || 'New catalogue'; m.n = S.cat ? S.cat.items.length : 0; m.u = (S.cat && S.cat.updated) || ''; if (touch) m.at = Date.now(); store.set(K.idx, S.lib); }
   if (!ok) toast('This device has no room left to save this catalogue. Remove a catalogue you no longer need, or use smaller pictures.', 7000);
   return ok;
 }
 function newProject() {
-  const id = newId(); S.id = id; S.cat = null; S.opts = DEF(); S.url = ''; S.orders = [];
+  const id = newId(); S.id = id; S.cat = null; S.opts = DEF(); S.url = ''; S.orders = []; S.base = {};
   S.lib.unshift({ id, name: 'New catalogue', n: 0, at: Date.now() });
   store.set(K.idx, S.lib); store.set(K.cur, id); store.set(K.p(id), { cat: null, opts: S.opts, url: '' });
 }
-let main, stepsEl, libEl;
+let main, stepsEl, tabsEl, libEl;
+const GROUP = { orders: 'orders', stock: 'stock', print: 'print', load: 'load', controls: 'load', page: 'load', share: 'load', brand: 'brand' };
 
 (async function start() {
   registerSW(); await loadConfig();
@@ -78,19 +81,32 @@ function showGate(reason) {
 }
 
 const saveOpts = () => saveProject();
-function load(cat) { if (!S.id) newProject(); S.cat = cat; if (!S.opts.title) S.opts.title = cat.list.name; saveProject(); renderLib(); go('brand'); }
+function load(cat) {
+  if (!S.id) newProject();
+  if (S.cat) {
+    const n = changedCount(S.cat, S.base);
+    if (S.opts.master !== 'site' && n && !confirm('You changed stock or prices on ' + n + (n === 1 ? ' item' : ' items') + ' here. The app is in charge, so loading this file replaces them with the app\'s numbers. Continue?')) return;
+    const m = mergeIncoming(S.cat, S.base, cat, S.opts.master);
+    S.cat = m.cat; S.base = m.base; if (m.kept) toast(m.kept + (m.kept === 1 ? ' item keeps' : ' items keep') + ' the stock and price you set here.', 5000);
+  } else { S.cat = cat; S.base = baseOf(cat); }
+  if (!S.opts.title) S.opts.title = cat.list.name; saveProject(); renderLib(); go(hasBrand(S.brand) ? 'page' : 'brand');
+}
 
 function build(g) {
   app.textContent = '';
   stepsEl = el('div', { class: 'steps', role: 'group', 'aria-label': 'Steps' });
-  [['load', 'Catalogue'], ['brand', 'Brand'], ['controls', 'Controls'], ['page', 'Page'], ['orders', 'Orders'], ['share', 'Share']].forEach(([v, l], i) =>
-    stepsEl.append(el('button', { type: 'button', 'data-step': v, onclick: () => go(v) }, [el('span', { class: 'num', text: String(i + 1) }), l])));
+  tabsEl = el('div', { class: 'steps tabs5', role: 'group', 'aria-label': 'Sections' });
+  [['orders', 'Orders'], ['stock', 'Stock & prices'], ['print', 'Print'], ['load', 'Catalogue page'], ['brand', 'Setup']].forEach(([v, l]) =>
+    tabsEl.append(el('button', { type: 'button', 'data-tab': GROUP[v], 'data-step': v, onclick: () => go(v) }, [l])));
+  stepsEl = el('div', { class: 'steps subs', role: 'group', 'aria-label': 'Catalogue page steps' });
+  [['load', 'Catalogue'], ['controls', 'Controls'], ['page', 'Page'], ['share', 'Share']].forEach(([v, l], i) =>
+    stepsEl.append(el('button', { type: 'button', 'data-sub': v, onclick: () => go(v) }, [el('span', { class: 'num', text: String(i + 1) }), l])));
   libEl = el('details', { class: 'lib', open: true });
   if (window.matchMedia && matchMedia('(max-width:980px)').matches) libEl.open = false;
-  main = el('main', { class: 'page' }, [el('h1', { text: 'LT-Catalogue' }), stepsEl, el('div', { class: 'work' }, [el('div', { id: 'view' }), libEl])]);
+  main = el('main', { class: 'page' }, [el('h1', { text: 'LT-Catalogue' }), tabsEl, stepsEl, el('div', { class: 'work' }, [el('div', { id: 'view' }), libEl])]);
   renderLib();
   app.append(topBar({ tool: 'catalogue', who: { alias: g.alias, offline: g.offline, checked: g.checked } }), main);
-  go(S.cat ? (hasBrand(S.brand) ? 'page' : 'brand') : 'load');
+  go(S.cat ? (S.orders.length ? 'orders' : hasBrand(S.brand) ? 'page' : 'brand') : 'load');
 }
 const dayText = ms => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const ago = ms => { const d = Math.floor((Date.now() - ms) / 86400000); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d < 60 ? d + ' days ago' : Math.round(d / 30) + ' months ago'; };
@@ -116,7 +132,7 @@ function renderLib() {
 /* A backup file holds one catalogue, its choices and its orders. The seller keeps it in their own Drive or Dropbox. */
 function saveBackup() {
   const name = S.opts.title || (S.cat && S.cat.list.name) || 'catalogue';
-  downloadText(`${slug(name)}.lt-catalogue.json`, JSON.stringify({ app: 'lt-catalogue', v: 1, saved: new Date().toISOString().slice(0, 10), cat: S.cat, opts: S.opts, url: S.url, orders: S.orders }));
+  downloadText(`${slug(name)}.lt-catalogue.json`, JSON.stringify({ app: 'lt-catalogue', v: 1, saved: new Date().toISOString().slice(0, 10), cat: S.cat, opts: S.opts, url: S.url, orders: S.orders, base: S.base }));
   toast('Backup saved. Put the file in your own Drive or Dropbox.', 5000);
 }
 async function openBackup() {
@@ -128,7 +144,7 @@ async function openBackup() {
     const id = newId(), cat = readCatalogue(JSON.stringify({ ...j.cat, app: 'lineage', format: 'catalogue', version: 1 })); cat.items.forEach((it, k) => { it.hide = !!(j.cat.items[k] && j.cat.items[k].hide); const a = j.cat.items[k] && j.cat.items[k].available; if (typeof a === 'number' && a >= 0 && a < 1e6) it.available = Math.floor(a); });
     const opts = Object.assign(DEF(), typeof j.opts === 'object' && j.opts ? j.opts : {});
     S.lib.unshift({ id, name: opts.title || cat.list.name || 'Catalogue', n: cat.items.length, u: cat.updated || '', at: Date.now() }); store.set(K.idx, S.lib);
-    if (!store.set(K.p(id), { cat, opts, url: String(j.url || '').slice(0, 300), orders: ord })) { S.lib.shift(); store.set(K.idx, S.lib); toast('This device has no room for that backup.'); return; }
+    if (!store.set(K.p(id), { cat, opts, url: String(j.url || '').slice(0, 300), orders: ord, base: cleanBase(j.base, cat) })) { S.lib.shift(); store.set(K.idx, S.lib); toast('This device has no room for that backup.'); return; }
     openProject(id); renderLib(); go('page'); toast('Backup opened');
   } catch (e) { toast(e.message || 'That file could not be read.'); }
 }
@@ -143,7 +159,7 @@ function renameCur() {
 }
 function dupCur() {
   if (!S.cat) { toast('Choose a catalogue file first'); return; }
-  const src = { cat: JSON.parse(JSON.stringify(S.cat)), opts: { ...S.opts, title: (S.opts.title || S.cat.list.name || 'Catalogue') + ' (copy)' }, url: '', orders: [] };
+  const src = { cat: JSON.parse(JSON.stringify(S.cat)), opts: { ...S.opts, title: (S.opts.title || S.cat.list.name || 'Catalogue') + ' (copy)' }, url: '', orders: [], base: JSON.parse(JSON.stringify(S.base)) };
   const id = newId(); S.lib.unshift({ id, name: src.opts.title, n: src.cat.items.length, at: Date.now() }); store.set(K.idx, S.lib);
   if (!store.set(K.p(id), src)) { S.lib.shift(); store.set(K.idx, S.lib); toast('This device has no room for another copy.'); return; }
   openProject(id); renderLib(); go(S.step);
@@ -157,9 +173,13 @@ function delCur() {
 function go(step) {
   if (step !== 'load' && !S.cat) { toast('Choose a catalogue first'); step = 'load'; }
   S.step = step;
-  stepsEl.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.step === step)));
+  const grp = GROUP[step] || step;
+  tabsEl.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.tab === grp)));
+  stepsEl.hidden = grp !== 'load';
+  stepsEl.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.sub === step)));
   const v = document.getElementById('view'); v.textContent = '';
-  ({ load: viewLoad, brand: viewBrand, controls: viewControls, page: viewPage, orders: v2 => viewOrders(v2, { S, field, text, area, toast, save: saveProject, downloadText, toPrintOrders }), share: viewShare })[step](v);
+  const ctx = { S, field, text, area, toast, save: saveProject, downloadText, toPrintOrders, toPrintItems, toPrintQr, go, updateItems };
+  ({ load: viewLoad, brand: viewSetup, controls: viewControls, page: viewPage, orders: v2 => viewOrders(v2, ctx), stock: v2 => viewStock(v2, ctx), print: v2 => viewPrint(v2, ctx), share: viewShare })[step](v);
 }
 const field = (label, input, hint) => el('label', { class: 'fld' }, [el('span', { text: label }), input, hint ? el('small', { text: hint }) : null]);
 const text = (val, on, ph, type = 'text') => { const i = el('input', { type, value: val || '', placeholder: ph || '' }); i.addEventListener('input', () => on(i.value)); return i; };
@@ -181,6 +201,8 @@ function viewLoad(v) {
     el('p', { class: 'small muted', style: 'margin-top:14px', text: 'Only what is in the catalogue file is used: names, descriptions, pack sizes, prices, availability and the pictures you chose to share.' }));
 }
 
+/* Setup: the brand and the return address (the master choice lives on Stock & prices) */
+function viewSetup(v) { viewBrand(v); }
 /* 2. the brand */
 function viewBrand(v) {
   const b = S.brand; let logoImg;
@@ -302,11 +324,14 @@ async function download() {
   downloadText(`${slug(S.opts.title)}.html`, pageHTML(S.runtime), 'text/html');
   toast('Page downloaded. Put the file on your site or Drive, then share its link.', 5000);
 }
+function toPrintQr() { if (!S.url) { toast('Add your catalogue link first'); return; } const ok = putHandoff('print', { source: 'catalogue', label: 'QR link stickers', csv: 'Title,Link,Seller\n' + [S.opts.title || S.cat.list.name, S.url, S.brand.name || S.cat.sender.name].map(x => /[",]/.test(x) ? '"' + String(x).replace(/"/g, '""') + '"' : x).join(','), brand: hasBrand(S.brand) ? S.brand : null }); if (ok) location.href = rootUrl('print/'); }
 function toPrintOrders(csv, label, skipped) {
   const ok = putHandoff('print', { source: 'orders', kind: 'address', label, csv, brand: hasBrand(S.brand) ? S.brand : null });
   if (!ok) { toast('Could not pass the orders to LT-Print on this device'); return; }
   location.href = rootUrl('print/');
 }
+async function updateItems() { const f = await pickFile('.json,application/json'); if (!f) return; try { load(readCatalogue(await f.text())); go('orders'); } catch (e) { toast(e.message, 6000); } }
+function toPrintItems() { toPrint(); }
 function toPrint() {
   const { text, count } = csvRows(S.cat, S.brand);
   if (!count) { toast('Include at least one item first'); return; }
@@ -345,5 +370,5 @@ function viewShare(v) {
     el('div', { class: 'split', style: 'grid-template-columns:repeat(auto-fit,minmax(280px,1fr))' }, [
       el('div', {}, [el('h2', { text: 'Forum post' }), el('p', { class: 'lbl', text: 'Plain text (Facebook, Discord, email)' }), plain, copy(plain, 'Copy text'), el('p', { class: 'lbl', style: 'margin-top:14px', text: 'BBCode (most forums)' }), bb, copy(bb, 'Copy BBCode')]),
       el('div', {}, [el('h2', { text: 'Flyer (A5)' }), fr, el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Print the flyer', onclick: () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch { toast('Printing is not available here'); } } }),
-        el('button', { type: 'button', class: 'btn', text: 'Make QR stickers in LT-Print', onclick: () => { if (!S.url) { toast('Add your catalogue link first'); return; } const ok = putHandoff('print', { source: 'catalogue', label: 'QR link stickers', csv: 'Title,Link,Seller\n' + [S.opts.title || S.cat.list.name, S.url, S.brand.name || S.cat.sender.name].map(x => /[",]/.test(x) ? '"' + String(x).replace(/"/g, '""') + '"' : x).join(','), brand: hasBrand(S.brand) ? S.brand : null }); if (ok) location.href = rootUrl('print/'); } })])])]));
+        el('button', { type: 'button', class: 'btn', text: 'Make QR stickers in LT-Print', onclick: toPrintQr })])])]));
 }

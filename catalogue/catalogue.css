@@ -51,3 +51,15 @@
 .unsure input,.unsure textarea,.unsure select{outline:3px solid var(--copper-l,#d9a066);background:#fff7ea}
 .aip{margin-top:12px}.aip summary{cursor:pointer;font-weight:600}
 .oprint{align-items:center;margin:8px 0}
+.cg .tabs5{margin-bottom:8px}
+.cg .tabs5 button{font-size:1rem}
+.cg .steps.subs{margin:0 0 16px;padding:8px 10px;background:var(--sunk,#ebe5dc);border-radius:14px}
+.cg .steps.subs button{min-height:38px;padding:0 14px;font-weight:600}
+.stocktbl{width:100%;border-collapse:collapse}
+.stocktbl th,.stocktbl td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+.stocktbl tr.chg td{background:#fff7ea}
+.stocktbl .stk{white-space:nowrap}
+.stocktbl .stk input{text-align:center;margin:0 4px}
+.pjob h3{margin:0 0 4px}
+.pjob{margin-bottom:12px}
+@media (max-width:640px){.stocktbl thead{display:none}.stocktbl tr{display:block;border-bottom:2px solid var(--line);padding:6px 0}.stocktbl td{display:block;border:0;padding:3px 0}}

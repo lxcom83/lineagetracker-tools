@@ -51,7 +51,23 @@ export function parseOrderEmail(txt, items) {
     } else if ((m = line.match(/^From:\s*(.*)$/i))) o.name = m[1].trim();
     else if ((m = line.match(/^Email:\s*(.*)$/i))) o.email = m[1].trim();
     else if ((m = line.match(/^Delivery details:\s*(.*)$/i))) { if (m[1].trim()) Object.assign(o, splitAddress(m[1])); }
+    else if ((m = line.match(/^(Phone|Street|Suburb|State|Postcode|Country):\s*(.*)$/i))) o[m[1].toLowerCase()] = m[2].trim();
     else if ((m = line.match(/^Note:\s*(.*)$/i))) o.note = m[1].trim();
+  });
+  return o;
+}
+
+/* An order file made by a catalogue page ("Download order file"). Untrusted: every field is cleaned and every item is checked against this catalogue. */
+export function parseOrderFile(txt, items) {
+  let j; try { j = JSON.parse(txt); } catch { throw new Error('That is not an order file.'); }
+  if (!j || j.app !== 'lt-order' || typeof j.customer !== 'object' || !Array.isArray(j.lines)) throw new Error('That is not an order file from a catalogue page.');
+  const t = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n), c = j.customer || {};
+  const o = { name: t(c.name, 120), email: t(c.email, 200), phone: t(c.phone, 60), street: t(c.street, 160), suburb: t(c.suburb, 80), state: t(c.state, 40), postcode: t(c.postcode, 20), country: t(c.country, 60), note: t(j.note, 600), lines: [] };
+  const by = new Map(items.map(i => [i.key, i]));
+  j.lines.slice(0, 100).forEach(l => {
+    if (!l || typeof l !== 'object') return;
+    const it = by.get(String(l.key || '')), q = Math.max(1, Math.min(999, Math.round(+l.qty) || 1));
+    if (it) o.lines.push({ key: it.key, name: it.name, qty: q, price: it.price || '' }); else o.lines.push({ key: '', name: t(l.name, 140) || 'Unknown item', qty: q, price: '' });
   });
   return o;
 }
@@ -108,6 +124,8 @@ export function viewOrders(v, c) {
   S.orders.forEach(tidyOrder);
   const s = sym(S.cat.items);
   let filter = 'all', adding = null, pasting = false, edOpen = false, aiOpen = false;
+  const queue = [];
+  const nextInQueue = () => { if (!queue.length) return false; adding = queue.shift(); toast(queue.length ? queue.length + ' more order file' + (queue.length === 1 ? '' : 's') + ' to check after this one.' : 'Last order file. Check it, then save.', 4000); return true; };
   const root = el('div', {});
   const log = (o, t) => { (o.log ||= []).push({ at: Date.now(), t }); };
   const commit = () => { save(false); draw(); };
@@ -182,8 +200,8 @@ export function viewOrders(v, c) {
           if (!o.lines.length) { toast('Add at least one item'); return; }
           const keep = { name: o.name, email: o.email, phone: o.phone, street: o.street, suburb: o.suburb, state: o.state, postcode: o.postcode, country: o.country, date: o.date, status: o.status, note: o.note, lines: o.lines.map(l => ({ key: l.key, name: l.name, qty: l.qty, price: l.price })) };
           if (editing) { const t0 = S.orders.find(x => x.id === o.editId); if (t0) { Object.assign(t0, keep); log(t0, 'Edited'); } } else { S.orders.unshift(Object.assign({ id: newId(), at: Date.now(), ref: nextRef(S.orders), log: [{ at: Date.now(), t: 'Order added' }] }, keep)); }
-          adding = null; commit(); } }),
-        el('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => { adding = null; draw(); } })]),
+          adding = null; nextInQueue(); commit(); } }),
+        el('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => { adding = null; nextInQueue(); draw(); } })]),
     ]);
   }
 
@@ -246,6 +264,17 @@ export function viewOrders(v, c) {
         el('button', { type: 'button', class: 'btn primary', text: 'New order', onclick: () => { adding = { name: '', email: '', phone: '', street: '', suburb: '', state: '', postcode: '', country: '', note: '', lines: [], date: today(), status: STATUSES[0][0] }; pasting = false; draw(); } }),
         el('button', { type: 'button', class: 'btn', text: 'Add from a message or photo', onclick: () => { pasting = true; adding = null; draw(); } }),
         el('button', { type: 'button', class: 'btn', text: 'Copy packing list', onclick: async () => { const stop = STATUSES.findIndex(x => x[0] === 'packed'), early = STATUSES.slice(0, stop > 0 ? stop : 2).map(x => x[0]), todo = all.filter(o => early.includes(o.status)); if (!todo.length) { toast('No orders waiting to be packed'); return; } try { await navigator.clipboard.writeText(packingList(todo)); toast('Packing list copied (orders before the Packed status)'); } catch { toast('Could not copy'); } } }),
+        el('button', { type: 'button', class: 'btn', text: 'Open order files', onclick: () => {
+          const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = '.json,application/json';
+          inp.addEventListener('change', async () => {
+            const got = []; let bad = 0;
+            for (const f of [...inp.files].slice(0, 30)) { try { const o = parseOrderFile(await f.text(), S.cat.items); if (o.lines.length) got.push(Object.assign({ name: '', email: '', phone: '', street: '', suburb: '', state: '', postcode: '', country: '', note: '', date: today(), status: STATUSES[0][0] }, o)); else bad++; } catch { bad++; } }
+            if (bad) toast(bad + (bad === 1 ? ' file was not a usable order file.' : ' files were not usable order files.'), 5000);
+            if (!got.length) return;
+            queue.length = 0; queue.push(...got); pasting = false; nextInQueue(); draw(); window.scrollTo({ top: 0, behavior: 'smooth' });
+          }); inp.click();
+        } }),
+        c.updateItems ? el('button', { type: 'button', class: 'btn', text: 'Update items from a new file', onclick: c.updateItems }) : null,
         el('button', { type: 'button', class: 'btn', text: 'Download as a spreadsheet', onclick: () => { if (!all.length) { toast('No orders yet'); return; } downloadText('orders.csv', ordersCsv(all, S.cat.items), 'text/csv'); } })]),
       ...[adding ? orderForm() : null, pasting ? pasteForm() : null].filter(Boolean),
       el('div', { class: 'ochips', role: 'group', 'aria-label': 'Filter by status' }, [['all', 'All']].concat(STATUSES).map(([k, t]) => el('button', { type: 'button', class: 'chipb', 'aria-pressed': String(filter === k), text: t + ' (' + counts(k) + ')', onclick: () => { filter = k; draw(); } }))),

@@ -146,7 +146,8 @@
     var ls = lines(), t = total(ls), L = ['Order for ' + (B.name || (D.sender && D.sender.name) || O.title || 'the catalogue'), ''];
     ls.forEach(function (l) { L.push(l.n + ' x ' + l.it.name + (l.it.per ? ' (' + l.it.per + ')' : '') + (O.prices !== false && l.it.price ? ', ' + l.it.price : '')); });
     if (t) L.push('', 'Estimated total: ' + t + ' (postage extra unless stated)');
-    L.push('', 'From: ' + (who.name || ''), 'Email: ' + (who.email || ''), 'Delivery details: ' + (who.addr || ''));
+    L.push('', 'From: ' + (who.name || ''), 'Email: ' + (who.email || ''));
+    [['Phone', 'phone'], ['Street', 'street'], ['Suburb', 'suburb'], ['State', 'state'], ['Postcode', 'postcode'], ['Country', 'country']].forEach(function (r) { if (who[r[1]]) L.push(r[0] + ': ' + who[r[1]]); });
     if (who.note) L.push('', 'Note: ' + who.note);
     return L.join('\n');
   }
@@ -157,7 +158,7 @@
     function fld(key, label, type, ph) { var i = type === 'area' ? el('textarea', { rows: '3', placeholder: ph || '' }) : el('input', { type: type || 'text', placeholder: ph || '', autocomplete: key === 'email' ? 'email' : key === 'name' ? 'name' : 'off' }); f[key] = i; return el('label', { class: 'fl' }, [el('span', { text: label }), i]); }
     var list = el('ul', { class: 'ol' }); ls.forEach(function (l) { list.append(el('li', {}, [el('span', { text: l.n + ' × ' + l.it.name }), O.prices !== false && l.it.price ? el('span', { class: 'r', text: l.it.price }) : null])); });
     var msg = el('p', { class: 'hint' });
-    function who() { return { name: f.name.value.trim(), email: f.email.value.trim(), addr: f.addr.value.trim(), note: f.note.value.trim() }; }
+    function who() { var w = {}; ['name', 'email', 'phone', 'street', 'suburb', 'state', 'postcode', 'country', 'note'].forEach(function (k) { w[k] = f[k].value.trim(); }); return w; }
     function need() { var w = who(); if (!w.name || !w.email) { msg.textContent = 'Please add your name and email so the seller can reply.'; return null; } if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(w.email)) { msg.textContent = 'That email address does not look right.'; return null; } msg.textContent = ''; return w; }
     var acts = el('div', { class: 'acts' });
     if (B.email) acts.append(el('button', { type: 'button', class: 'go', text: 'Send order by email', onclick: function () {
@@ -165,6 +166,12 @@
       var href = 'mailto:' + B.email + '?subject=' + encodeURIComponent('Order from ' + w.name) + '&body=' + encodeURIComponent(body);
       if (href.length > 1900) { msg.textContent = 'This order is long for an email link. Use Copy order and paste it into an email to ' + B.email + '.'; return; }
       location.href = href; msg.textContent = 'Your email program should open with the order ready to send.';
+    } }));
+    acts.append(el('button', { type: 'button', text: 'Download order file', onclick: function () {
+      var w = need(); if (!w) return;
+      var file = { app: 'lt-order', v: 1, at: new Date().toISOString().slice(0, 10), shop: B.name || (D.sender && D.sender.name) || '', customer: { name: w.name, email: w.email, phone: w.phone, street: w.street, suburb: w.suburb, state: w.state, postcode: w.postcode, country: w.country }, note: w.note, lines: lines().map(function (l) { return { key: l.it.key, name: l.it.name, qty: l.n, price: l.it.price || '' }; }) };
+      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' })); a.download = 'order-' + file.at + '.lt-order.json'; document.body.appendChild(a); a.click(); a.remove();
+      msg.textContent = 'Order file saved.' + (B.email ? ' Attach it to an email to ' + B.email + ', or send it any way you like.' : ' Send it to the seller any way you like.');
     } }));
     acts.append(el('button', { type: 'button', text: 'Copy order', onclick: function () {
       var w = need(); if (!w) return; var body = orderText(w);
@@ -175,7 +182,7 @@
     d.append(el('h2', { text: 'Your order' }), list, t ? el('p', { class: 'tot', text: 'Estimated total: ' + t + ' (postage extra unless stated)' }) : null,
       O.pay ? el('p', { class: 'hint', text: 'How to pay: ' + O.pay }) : null,
       el('p', { class: 'hint', text: 'Nothing is sent from this page. Your order goes by your own email program, or you copy it.' }),
-      fld('name', 'Your name'), fld('email', 'Your email', 'email'), fld('addr', 'Delivery details', 'area', 'Where should it go?'), fld('note', 'Note for the seller (optional)', 'area'), msg, acts);
+      fld('name', 'Your name'), fld('email', 'Your email', 'email'), fld('phone', 'Phone (optional)', 'tel'), fld('street', 'Street address', 'text', 'Where should it go?'), fld('suburb', 'Suburb or town'), fld('state', 'State'), fld('postcode', 'Postcode'), fld('country', 'Country (only if overseas)'), fld('note', 'Note for the seller (optional)', 'area'), msg, acts);
     if (d.showModal) d.showModal(); else d.setAttribute('open', '');
   }
   if (O.order === 'none') obar.remove();
