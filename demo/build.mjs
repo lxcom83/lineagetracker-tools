@@ -9,6 +9,8 @@ const runtime = readFileSync(join(here, '../catalogue/runtime.js'), 'utf8');
 const noindex = h => h.replace('<meta name="referrer" content="no-referrer">', '<meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">');
 const pages = [
   ['fluffy-lemon-seeds.html', SAMPLE, SAMPLE_BRAND, { title: 'Spring seed catalogue', intro: 'An example catalogue made with LT-Catalogue. Fluffy Lemon Seeds is an invented seller and nothing here can be ordered.', priceNote: 'Prices in AUD (example only)', terms: 'Example page for demonstration. No real seeds are sold here.' }],
+  ['fluffy-lemon-shopfront.html', SAMPLE, SAMPLE_BRAND, { look: 'shop', title: 'Spring seed catalogue (Shopfront style)', intro: 'An example catalogue made with LT-Catalogue. Fluffy Lemon Seeds is an invented seller and nothing here can be ordered.', priceNote: 'Prices in AUD (example only)', terms: 'Example page for demonstration. No real seeds are sold here.' }],
+  ['fluffy-lemon-pricelist.html', SAMPLE, SAMPLE_BRAND, { look: 'list', title: 'Spring seed catalogue (Price list style)', intro: 'An example catalogue made with LT-Catalogue. Fluffy Lemon Seeds is an invented seller and nothing here can be ordered.', priceNote: 'Prices in AUD (example only)', terms: 'Example page for demonstration. No real seeds are sold here.' }],
   ['bramble-hill-homestead.html', SAMPLE_GOODS, SAMPLE_GOODS_BRAND, { title: 'Homestead goods', intro: 'An example catalogue made with LT-Catalogue, for someone who sells things they make rather than seeds. Bramble Hill Homestead is an invented seller and nothing here can be ordered.', priceNote: 'Prices in AUD (example only)', terms: 'Example page for demonstration. Nothing is sold here.' }],
 ];
 for (const [file, sample, brand, o] of pages) {

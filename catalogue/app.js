@@ -6,7 +6,7 @@ import { downloadText, pickFile } from '../kit/files.js';
 import { getBrand, setBrand, blankBrand, hasBrand, logoFromFile, putHandoff } from '../kit/brand.js';
 import { QR } from '../kit/qr.js';
 import { fold } from '../kit/fold.js';
-import { readCatalogue, buildPage, csvRows } from './template.js';
+import { readCatalogue, buildPage, csvRows, LOOKS } from './template.js';
 import { SAMPLE, SAMPLE_BRAND, SAMPLE_GOODS, SAMPLE_GOODS_BRAND } from './sample.js';
 import { viewOrders } from './orders.js';
 import { viewStock, baseOf, cleanBase, mergeIncoming, changedCount } from './stock.js';
@@ -260,6 +260,7 @@ function viewControls(v) {
     el('div', {}, [
       el('p', { class: 'muted', style: 'margin-top:0', text: 'Choose what goes on your page. Everything is on by default. The preview updates as you tick and untick.' }), warn,
       ...CONTROLS.map(([t, rows]) => group(t, rows.filter(([k]) => !(k === 'species' && !cat.items.some(i => i.species))).map(([k, l]) => chk(l, k)))),
+      group('Page style', [el('div', { class: 'looks', role: 'radiogroup', 'aria-label': 'Page style' }, LOOKS.map(([k, name, txt]) => { const r = el('input', { type: 'radio', name: 'look', value: k }); r.checked = (o.look || 'classic') === k; r.addEventListener('change', () => { o.look = k; refresh(); }); return el('label', { class: 'look' }, [r, el('span', { class: 'lk-art lk-' + k, 'aria-hidden': 'true' }, [el('i'), el('i'), el('i')]), el('b', { text: name }), el('small', { text: txt })]); })), el('p', { class: 'small muted', text: 'The same items and ordering in all three. Try each one and watch the preview.' })]),
       group('Picture size', [field('Pictures on the page', photoSel, 'Smaller pictures make a smaller page that loads faster on phones. Your catalogue file is not changed.'), makeMeter()]),
       group('Stock wording', [field('What buyers are told', stockSel), field('Say "Limited supply" when this many or fewer are left', text(String(o.lowAt || 5), val => { o.lowAt = Math.max(1, Math.min(50, Math.round(+val) || 5)); refresh(); }, '5', 'number'), 'Sold out always shows. Exact numbers never leave your device unless you choose "Exact numbers".')]),
       group('Ordering and money', [field('Ordering', mode), chk('Show an estimated order total', 'total'),
@@ -313,7 +314,7 @@ function viewPage(v) {
         el('button', { type: 'button', class: 'btn primary', text: 'Download the page', onclick: download }),
         el('button', { type: 'button', class: 'btn', text: 'Print labels in LT-Print', onclick: toPrint }),
         el('button', { type: 'button', class: 'btn', text: 'Next: share', onclick: () => go('share') })]),
-      el('p', { class: 'small muted', text: 'The page is a single file. Put it on your own website or a free web host such as GitHub Pages, Cloudflare Pages or Netlify, then share the link. (Google Drive and Dropbox links usually show the page as plain code, so they are not good hosts for it.) Nothing is sent to us.' })]),
+      el('p', { class: 'small muted', text: 'The page is a single file. Put it on your own website or a free web host such as GitHub Pages, Cloudflare Pages or Netlify, then share the link (the Share tab has a guide). (Google Drive and Dropbox links usually show the page as plain code, so they are not good hosts for it.) Nothing is sent to us.' })]),
     frame]));
   refresh(false);
 }
@@ -365,7 +366,15 @@ function viewShare(v) {
   plain.value = postText('plain'); bb.value = postText('bb');
   const copy = (ta, label) => el('button', { type: 'button', class: 'btn sm', text: label, onclick: async () => { try { await navigator.clipboard.writeText(ta.value); toast('Copied'); } catch { ta.select(); toast('Press copy on your keyboard'); } } });
   fr = el('iframe', { class: 'pv flyer', title: 'Flyer preview', sandbox: 'allow-modals allow-same-origin' }); fr.srcdoc = flyerHTML();
-  v.append(el('p', { class: 'muted', text: 'Put the downloaded page somewhere online, paste its link here, and you have a forum post and a flyer with a QR code that go with it. The link is kept on this device.' }),
+  const opt = (t, d) => el('li', {}, [el('b', { text: t + ' ' }), el('span', { text: d })]);
+  v.append(el('div', { class: 'card', id: 'hosting' }, [el('h2', { text: 'Where to put your page' }),
+    el('ul', { class: 'small' }, [
+      opt('Forum or social post.', 'Share the link in a post. Copy the text below.'),
+      opt('A free host with a free address.', 'GitHub Pages, Cloudflare Pages or Netlify give you an address such as yourname.github.io at no cost.'),
+      opt('Your own domain.', 'Buy a name such as yourshop.com.au (about $15 to $25 a year) and point it at a free host. To a visitor it looks like a website.')]),
+    el('p', { class: 'small muted', text: 'The limits: it is one page with no card checkout, orders arrive as an email, it is a snapshot you upload again when stock or prices change, and we cannot promise how search engines rank it.' }),
+    el('p', { class: 'small' }, [el('a', { href: 'host-guide.html', target: '_blank', rel: 'noopener', text: 'Read the step by step guide' })])]),
+    el('p', { class: 'muted', text: 'Once your page is online, paste its link here for a forum post and a flyer with a QR code. The link is kept on this device.' }),
     field('Link to your page', urlIn, 'Optional until you have uploaded the page.'),
     el('div', { class: 'split', style: 'grid-template-columns:repeat(auto-fit,minmax(280px,1fr))' }, [
       el('div', {}, [el('h2', { text: 'Forum post' }), el('p', { class: 'lbl', text: 'Plain text (Facebook, Discord, email)' }), plain, copy(plain, 'Copy text'), el('p', { class: 'lbl', style: 'margin-top:14px', text: 'BBCode (most forums)' }), bb, copy(bb, 'Copy BBCode')]),

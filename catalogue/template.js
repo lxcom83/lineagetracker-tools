@@ -61,11 +61,41 @@ dialog h2{margin:0 0 8px;color:var(--ink)}.ol{list-style:none;margin:0 0 8px;pad
 #terms{scroll-margin-top:70px}footer{border-top:1px solid var(--line);padding:18px 0 36px;color:var(--muted);font-size:.92rem}footer p{margin:0 0 6px;max-width:80ch}.flinks{font-weight:700}footer a{color:color-mix(in srgb,var(--accent) 55%,var(--text))}
 @media print{#lt-tools,#lt-order,.step,#lt-links,#lt-chips{display:none}.hero{background:none!important;color:#000!important;border-bottom:3px solid #000}.card{box-shadow:none}#lt-grid{grid-template-columns:repeat(2,1fr);padding-bottom:0}.card{break-inside:avoid}}`;
 
+
+/* Three looks for the same page. Same content and behaviour; only the layout and feel change. */
+export const LOOKS = [['classic', 'Cards', 'Bold coloured header and photo cards. Friendly and easy to scan.'], ['shop', 'Shopfront', 'A light, quiet layout with large square photos. Feels like a small boutique website.'], ['list', 'Price list', 'Compact rows with a small photo, best for many items or a price list you print.']];
+const LOOK_CSS = `.look-shop .hero{background:var(--bg);color:var(--text);border-bottom:1px solid var(--line)}
+.look-shop #lt-head{flex-direction:column;text-align:center;padding:46px 0 12px}
+.look-shop .brand-logo{width:116px;height:116px;box-shadow:none;border:1px solid var(--line)}
+.look-shop h1{font-family:Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:.01em;color:var(--ink)}
+.look-shop .eyebrow{color:color-mix(in srgb,var(--accent) 70%,var(--text))}
+.look-shop .meta,.look-shop .intro{margin-left:auto;margin-right:auto}
+.look-shop #lt-links{justify-content:center}
+.look-shop #lt-links a{background:transparent;border-color:var(--line);color:var(--text)}
+.look-shop #lt-links a.main{background:var(--accent);border-color:var(--accent);color:var(--accent2)}
+.look-shop #lt-links a:hover,.look-shop #lt-links a:focus-visible{background:color-mix(in srgb,var(--accent) 14%,transparent);outline:2px solid var(--accent);outline-offset:2px}
+.look-shop #lt-grid{grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:30px 22px}
+.look-shop .card{border:0;background:transparent;box-shadow:none;border-radius:0;overflow:visible}.look-shop .card:hover{transform:none;box-shadow:none}
+.look-shop .ph{aspect-ratio:1/1;border-radius:14px}
+.look-shop .body{padding:12px 2px}.look-shop .body h2{font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:1.3rem}
+.look-shop .ds{color:var(--muted)}
+.look-shop .price{background:none;color:var(--text);padding:0;font-size:1.1rem}
+.look-list .hero{border-bottom-width:3px}
+.look-list #lt-head{gap:14px;padding:18px 0 6px}.look-list .brand-logo{width:60px;height:60px;border-radius:14px;padding:5px}.look-list h1{font-size:clamp(1.4rem,4vw,1.9rem)}
+.look-list #lt-links{padding-bottom:14px}
+.look-list #lt-grid{display:block;padding-top:0}
+.look-list .card{flex-direction:row;align-items:flex-start;gap:14px;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;overflow:visible}.look-list .card:hover{transform:none;box-shadow:none}
+.look-list .ph{width:84px;height:84px;aspect-ratio:1;flex:none;border-radius:10px}
+.look-list .ribbon{top:16px;left:4px;font-size:.7rem;padding:2px 8px}
+.look-list .body{padding:0;gap:2px}.look-list .body h2{font-size:1.05rem}
+.look-list .ds{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:.9rem}
+.look-list .foot{padding-top:6px}.look-list .price{background:none;color:var(--text);padding:0}`;
+
 /* opts: {title, intro, order:'email'|'none', prices, photos, terms, accent, ink}  brand: from kit/brand.js
    inline: the runtime script text to put inside the page (a downloaded page), or '' to load runtime.js beside it (the preview) */
 export function buildPage(cat, brand, opts, inline) {
   const o = { title: String(opts.title || cat.list.name || 'Catalogue').slice(0, 120), intro: String(opts.intro || '').slice(0, 800), order: opts.order === 'none' ? 'none' : 'email',
-    prices: opts.prices !== false, photos: opts.photos !== false, links: opts.links !== false, jump: opts.jump !== false, stockMode: ['limited', 'exact', 'off'].includes(opts.stockMode) ? opts.stockMode : (opts.stock === false ? 'off' : 'limited'), lowAt: Math.max(1, Math.min(50, Math.round(+opts.lowAt || 5))), total: opts.total !== false, priceNote: String(opts.priceNote || '').slice(0, 160), pay: String(opts.pay || '').slice(0, 600) };
+    prices: opts.prices !== false, photos: opts.photos !== false, links: opts.links !== false, jump: opts.jump !== false, stockMode: ['limited', 'exact', 'off'].includes(opts.stockMode) ? opts.stockMode : (opts.stock === false ? 'off' : 'limited'), lowAt: Math.max(1, Math.min(50, Math.round(+opts.lowAt || 5))), total: opts.total !== false, look: ['classic', 'shop', 'list'].includes(opts.look) ? opts.look : 'classic', priceNote: String(opts.priceNote || '').slice(0, 160), pay: String(opts.pay || '').slice(0, 600) };
   ['search', 'sort', 'filter', 'instock', 'species', 'desc', 'notes', 'facts', 'offers'].forEach(k => { o[k] = opts[k] !== false; });
   const a = { accent: hex(brand.accent, '#C8794A'), ink: hex(brand.ink, '#1F3557') };
   a.herot = lum(a.ink) > 0.5 ? '#1b1b1b' : '#ffffff'; a.accent2 = lum(a.accent) > 0.55 ? '#1b1b1b' : '#ffffff';
@@ -81,7 +111,7 @@ export function buildPage(cat, brand, opts, inline) {
   const desc = (o.intro || `${items.length} items${b.name ? ' from ' + b.name : ''}`).slice(0, 160);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
 <title>${esc(o.title)}${b.name ? ' | ' + esc(b.name) : ''}</title><meta name="description" content="${esc(desc)}"><meta property="og:title" content="${esc(o.title)}"><meta property="og:description" content="${esc(desc)}">
-<style>${CSS(a)}</style></head><body>
+<style>${CSS(a)}${LOOK_CSS}</style></head><body class="look-${o.look}">
 <div class="hero"><div class="wrap"><header id="lt-head"></header><nav id="lt-links" aria-label="Quick links"></nav></div></div>
 <div class="wrap"><div id="lt-tools"></div><main id="lt-grid" aria-label="Catalogue"></main>
 <footer id="terms">${terms.map(t => `<p>${esc(t)}</p>`).join('')}<p>${cat.updated ? 'Updated ' + esc(cat.updated) + '. ' : ''}Powered by <a href="https://lineagetracker.org" rel="noopener">Lineage Tracker</a>, free at lineagetracker.org.</p></footer></div>

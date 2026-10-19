@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Put your shop page online · LT-Catalogue</title>
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../kit/kit.css">
+<link rel="stylesheet" href="catalogue.css">
+</head>
+<body class="cg">
+<main style="max-width:720px;margin:0 auto;padding:20px 16px 60px;line-height:1.55">
+<p><a href="./">← Back to LT-Catalogue</a></p>
+<h1>Put your shop page online</h1>
+<p>LT-Catalogue gives you one page, saved as a single file. To share it you put that file somewhere on the internet. There are three ways, from easiest to most "like a real website". Nothing here costs us anything and none of your data comes to us.</p>
+
+<h2>What this page can and cannot do</h2>
+<p>It is one page with your items, a basket and an order button that opens an email to you. There is no card checkout. It is a snapshot: when your stock or prices change, download the page again and upload it over the old one. We cannot promise how search engines rank it, so share the link yourself on forums, social media, flyers and your QR sticker.</p>
+
+<h2>Option 1: share it in a post</h2>
+<p>On the Share tab, copy the forum post text and add the page link. You still need the page to be online, so use Option 2 or 3 for the link.</p>
+
+<h2>Option 2: a free host with a free address</h2>
+<p>This gives an address such as <b>yourname.github.io/shop</b> at no cost.</p>
+<ol>
+<li>Download your page from LT-Catalogue (Catalogue page tab, then Page).</li>
+<li>Rename the file to <b>index.html</b>.</li>
+<li>Make a free account at <b>github.com</b>, then create a new public repository called <b>yourname.github.io</b> (use your own username).</li>
+<li>Choose "Add file", then "Upload files", drop in <b>index.html</b> and press Commit.</li>
+<li>Open the repository's Settings, then Pages. Pick the main branch and Save.</li>
+<li>After a minute or two your page is live at <b>https://yourname.github.io</b>.</li>
+</ol>
+<p>Cloudflare Pages and Netlify work much the same way: make a free account, choose to upload a folder, and drop in a folder that contains your <b>index.html</b>. They give you a free address ending in .pages.dev or .netlify.app.</p>
+<p>Do not use Google Drive or Dropbox links for the page. They usually show the file as plain code instead of a web page.</p>
+
+<h2>Option 3: your own domain</h2>
+<p>A domain such as <b>yourshop.com.au</b> costs about $15 to $25 a year from a domain seller. Your page is hosted free as in Option 2, and the domain points to it.</p>
+<ol>
+<li>Do Option 2 first, so the page is live.</li>
+<li>Buy your domain from any domain seller.</li>
+<li>In GitHub, open Settings, then Pages, and type your domain into "Custom domain". Save.</li>
+<li>At your domain seller, open the DNS settings. Add the records GitHub lists on that same Pages screen (four A records for the main domain, or one CNAME record for a name such as www).</li>
+<li>Wait up to a day, then tick "Enforce HTTPS" on the Pages screen.</li>
+</ol>
+<p>Cloudflare Pages and Netlify show their own DNS steps on their custom domain screens.</p>
+
+<h2>Keeping it up to date</h2>
+<p>Each time you change stock or prices, download the page again, then upload it over the old <b>index.html</b> in your repository. The link stays the same.</p>
+
+<h2>Your own content only</h2>
+<p>Only put your own words and photos on your page. You are responsible for what you publish and for how you sell and post.</p>
+</main>
+</body>
+</html>

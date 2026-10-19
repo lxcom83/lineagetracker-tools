@@ -108,3 +108,5 @@ The test scripts are in the handover's `qa-tools/tools/`:
 - `planner_model_test.mjs`: 81 checks of the plan model (`node planner_model_test.mjs`): cleaning, blocks, growth, sun position, the app hand-over.
 
 Serve this folder with `python3 -m http.server 8800` and run them with Playwright.
+
+- **Page styles and hosting (v1.6.0).** LT-Catalogue offers three page styles on the Controls tab: Cards, Shopfront and Price list (same items and ordering, body class `look-*`). The Share tab has a "Where to put your page" section (forum post, free host, own domain, plus the limits) and links to `catalogue/host-guide.html`, a plain step-by-step guide to GitHub Pages, Cloudflare Pages, Netlify and a custom domain.
