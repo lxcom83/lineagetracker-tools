@@ -110,3 +110,5 @@ The test scripts are in the handover's `qa-tools/tools/`:
 Serve this folder with `python3 -m http.server 8800` and run them with Playwright.
 
 - **Page styles and hosting (v1.6.0).** LT-Catalogue offers three page styles on the Controls tab: Cards, Shopfront and Price list (same items and ordering, body class `look-*`). The Share tab has a "Where to put your page" section (forum post, free host, own domain, plus the limits) and links to `catalogue/host-guide.html`, a plain step-by-step guide to GitHub Pages, Cloudflare Pages, Netlify and a custom domain.
+
+- **Planting guides for South Africa, India and the Philippines (v1.7.0).** South Africa is frost-based (`frost-regions.js`, 11 regions; southern-hemisphere hot-month flags H, D, X). India and the Philippines use the new season-based packs in `planner/seasons.js`: India by Kharif, Rabi and Zaid in 7 regions, the Philippines by Corona climate type in 5 zones. Dates are typical values for local growers to check. Test: `guides2.py` and the country picker checks in `planner.py`.

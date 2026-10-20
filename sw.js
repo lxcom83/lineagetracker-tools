@@ -1,12 +1,12 @@
 /* LT tools: works offline after the first visit. Same idea as the app: everything the tools need is cached; a new
    version replaces the cache. Sign-in, Drive and Dropbox always go to the network (they are on other addresses). */
-const CACHE = 'lt-tools-v1.6.0';
+const CACHE = 'lt-tools-v1.7.0';
 const FILES = ['./', 'index.html', 'signin.html', 'manifest.webmanifest', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
   'brand/logo-icon.svg', 'brand/logo-icon-dark.svg',
   'kit/kit.css', 'kit/fonts.css', 'kit/core.js', 'kit/bar.js', 'kit/files.js', 'kit/history.js', 'kit/tree.js', 'kit/qr.js', 'kit/barcode.js', 'kit/signin.js', 'kit/home.js', 'kit/planner.js', 'kit/brand.js', 'kit/fold.js',
   'print/', 'print/index.html', 'print/print.css', 'print/app.js', 'print/editor.js', 'print/model.js', 'print/render.js', 'print/starters.js', 'print/records.js', 'print/printing.js', 'print/sheet.html', 'print/sheet.js',
   'catalogue/', 'catalogue/index.html', 'catalogue/catalogue.css', 'catalogue/app.js', 'catalogue/template.js', 'catalogue/runtime.js', 'catalogue/orders.js', 'catalogue/ai.js', 'catalogue/stock.js', 'catalogue/printjobs.js', 'catalogue/host-guide.html', 'catalogue/sample.js',
-  'planner/', 'planner/index.html', 'planner/planner.css', 'planner/app.js', 'planner/model.js', 'planner/demos.js', 'planner/guides.js', 'planner/frost.js', 'planner/frost-regions.js', 'examples/plants.json', 'examples/animals.json', 'examples/olive.json'];
+  'planner/', 'planner/index.html', 'planner/planner.css', 'planner/app.js', 'planner/model.js', 'planner/demos.js', 'planner/guides.js', 'planner/frost.js', 'planner/frost-regions.js', 'planner/seasons.js', 'examples/plants.json', 'examples/animals.json', 'examples/olive.json'];
 const FONTS = ['atkinson-hyperlegible-latin-400-normal', 'atkinson-hyperlegible-latin-400-italic', 'atkinson-hyperlegible-latin-700-normal', 'atkinson-hyperlegible-latin-ext-400-normal', 'atkinson-hyperlegible-latin-ext-400-italic', 'atkinson-hyperlegible-latin-ext-700-normal',
   'barlow-condensed-latin-500-normal', 'barlow-condensed-latin-600-normal', 'barlow-condensed-latin-700-normal', 'barlow-condensed-latin-ext-500-normal', 'barlow-condensed-latin-ext-600-normal', 'barlow-condensed-latin-ext-700-normal',
   'barlow-condensed-vietnamese-500-normal', 'barlow-condensed-vietnamese-600-normal', 'barlow-condensed-vietnamese-700-normal'].map(f => `fonts/${f}.woff2`);

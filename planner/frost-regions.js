@@ -1,7 +1,9 @@
 /* State and region level zones for the frost-based planting guides (see frost.js).
    One line per place:  code | name shown | typical last spring frost (month-day) | frost-free days | extra weeks tender crops wait | flags
    flags: w = mild winter (cool crops can also be sown through winter), h = hot summer (Jul-Aug), d = hot summer (Jun-Aug),
-          x = very hot summer (Jun-Sep).
+          x = very hot summer (Jun-Sep).  Southern hemisphere: H = warm summer (Jan-Feb), D = hot summer (Dec-Feb), X = very hot summer (Nov-Mar).
+   South Africa: the South African regions are "estimate" rows: typical values set by the planner author from the South African Weather
+   Service and Agricultural Research Council climate descriptions and local gardening calendars.  Check them against your own garden.
    Source "table": the United States and Canadian dates are the average frost dates of a representative town in each state or
    province, taken from the Harvest to Table frost-date tables (which draw on NOAA records), checked against the Farmers'
    Almanac city pages.  Source "estimate": the British, Irish, German, French, Dutch, Spanish and New Zealand regions are typical values
@@ -199,9 +201,20 @@ nz-westcoast|West Coast|9-10|240|7|w
 nz-canterbury|Canterbury|10-10|190|2|
 nz-otago|Otago and coastal Southland|10-15|185|2|
 nz-central-otago|Central Otago and Queenstown|10-30|160|1|
+za-highveld|Highveld: Johannesburg, Pretoria, Midrand|8-25|275|0|
+za-eastern|Eastern Highveld and Free State east (Ermelo, Bethlehem, Lydenburg)|10-5|200|0|
+za-freestate|Free State and North West (Bloemfontein, Kroonstad, Potchefstroom)|9-10|235|0|D
+za-karoo|Karoo and Northern Cape (Kimberley, Upington, Beaufort West)|8-15|280|0|X
+za-limpopo|Limpopo bushveld and Mpumalanga lowveld (Polokwane, Nelspruit)|7-20|315|0|wX
+za-kzn-coast|KwaZulu-Natal coast and north (Durban, Richards Bay)|7-10|350|0|wD
+za-kzn-midlands|KZN Midlands and foothills (Pietermaritzburg, Howick)|9-5|245|0|
+za-ec-coast|Eastern Cape coast (East London, Gqeberha, Garden Route)|7-25|340|2|w
+za-ec-inland|Eastern Cape inland (Queenstown, Graaff-Reinet, Makhanda)|9-10|235|0|D
+za-wc-coast|Western Cape coast and Cape Peninsula (Cape Town, Hermanus)|7-25|345|0|wH
+za-wc-inland|Western Cape inland valleys (Paarl, Worcester, Oudtshoorn)|8-5|320|0|wD
 `;
-const HOT = { h: [7, 8], d: [6, 7, 8], x: [6, 7, 8, 9] };
-const GROUP = { US: 'By state or region', CA: 'By province or territory', GB: 'By region', IE: 'By province', DE: 'By state', FR: 'By region', NL: 'By region', NZ: 'By region', ES: 'By region' };
+const HOT = { h: [7, 8], d: [6, 7, 8], x: [6, 7, 8, 9], H: [1, 2], D: [12, 1, 2], X: [11, 12, 1, 2, 3] };   // lower case: northern summers; upper case: southern summers
+const GROUP = { US: 'By state or region', CA: 'By province or territory', GB: 'By region', IE: 'By province', DE: 'By state', FR: 'By region', NL: 'By region', NZ: 'By region', ES: 'By region', ZA: 'By region' };
 /* returns { US: [[code, name, [m, d], days, {winter, hot, late, group}], ...], ... } */
 export const REGIONS = {};
 for (const line of T.trim().split('\n')) {

@@ -128,6 +128,11 @@ export const ZONES = {
     ['es-interior', 'Interior plateau and the north-east valleys', [4, 20], 190, { hot: [7, 8] }],
     ['es-med', 'Mediterranean, southern and island climates', [1, 25], 330, { winter: 1, hot: [7, 8] }],
   ],
+  ZA: [
+    ['za-frost', 'Frosty interior (Highveld, Free State, high ground)', [9, 1], 250],
+    ['za-winterrain', 'Winter-rainfall Cape: mild and almost frost-free', [7, 25], 345, { winter: 1, hot: [1, 2] }],
+    ['za-frostfree', 'Frost-free subtropical coast and lowveld', [7, 10], 350, { winter: 1, hot: [12, 1, 2] }],
+  ],
   NL: [
     ['nl-coast', 'Coast and islands', [4, 20], 200, { late: 3 }],
     ['nl-inland', 'Inland', [5, 5], 170, { late: 2 }],
@@ -135,4 +140,4 @@ export const ZONES = {
 };
 /* every country lists its states or regions first, then the broader climate bands as a fallback */
 for (const cc of Object.keys(ZONES)) ZONES[cc] = [...(REGIONS[cc] || []), ...ZONES[cc].map(([c, l, lsf, free, o]) => [c, l, lsf, free, { ...(o || {}), group: 'By climate band' }])];
-export const NAMES = { US: 'United States', CA: 'Canada', GB: 'United Kingdom', IE: 'Ireland', NZ: 'New Zealand', DE: 'Germany', FR: 'France', NL: 'Netherlands', ES: 'Spain' };
+export const NAMES = { US: 'United States', CA: 'Canada', GB: 'United Kingdom', IE: 'Ireland', NZ: 'New Zealand', DE: 'Germany', FR: 'France', NL: 'Netherlands', ES: 'Spain', ZA: 'South Africa' };
