@@ -1,11 +1,13 @@
 /* LT-Planner (first slice): the 2D plan.  Same kit and feel as LT-Print: top bar, Plans menu, undo, tools on the left,
    feature tree and properties on the right.  Plans are saved on this device and as .ltplan files; Drive and Dropbox,
    the 3D view, ground shaping and model import come in later slices (see LT-PLANNER-PLAN.md). */
-import { CFG, loadConfig, el, icon, toast, dialog, confirmBox, promptBox, store, gate, REASONS, signInUrl, rootUrl, registerSW } from '../kit/core.js';
+import { whoAmI, CFG, loadConfig, el, icon, toast, dialog, confirmBox, promptBox, store, gate, REASONS, signInUrl, rootUrl, registerSW } from '../kit/core.js';
 import { topBar } from '../kit/bar.js';
 import { history } from '../kit/history.js';
 import { featureTree } from '../kit/tree.js';
 import { downloadText, pickFile, readZipEntry, openProtected } from '../kit/files.js';
+import * as TR from './terrain.js';
+import { parseGeoTiff } from './geotiff.js';
 import { fold, foldHeadings } from '../kit/fold.js';
 import { rowsFromApp } from '../print/model.js';
 import * as M from './model.js';
@@ -15,8 +17,8 @@ import { GUIDES, PACKS, COUNTRIES, MESSAGE, ISOLATION, hasGuide, zoneFromLat, so
 const app = document.getElementById('app');
 const SVGNS = 'http://www.w3.org/2000/svg';
 const K = { doc: 'ltplanner_doc', prefs: 'ltplanner_prefs', lib: 'ltplanner_blocks', places: 'ltplanner_places' };
-const S = { plan: null, sel: new Set(), tool: 'select', crop: 'tomato', ctx: null, open: {}, view: null, draft: null, sun: true };
-let hist, tree, svg, world, overlay, propsEl, blocksEl, calEl, placesEl, titleEl, undoB, redoB, dateIn, dateLbl, toolBtns = {};
+const S = { contours: false, contourStep: 0.5, plan: null, sel: new Set(), tool: 'select', crop: 'tomato', ctx: null, open: {}, view: null, draft: null, sun: true, brush: { op: 'raise', size: 3, power: 1 } };
+let btn3d, hist, tree, svg, world, overlay, propsEl, blocksEl, calEl, placesEl, titleEl, undoB, redoB, dateIn, dateLbl, toolBtns = {};
 
 const cropOptions = () => Object.entries(M.CROPS).sort((a, b) => (a[0] === 'other') - (b[0] === 'other') || a[1][0].localeCompare(b[1][0])).map(([k, c]) => el('option', { value: k, text: c[0] }));
 const located = () => hasGuide(S.plan.site.country, S.plan.site.zone);
@@ -41,8 +43,10 @@ const r2 = n => Math.round(n * 100) / 100;
   const saved = store.get(K.doc);
   try { S.plan = saved ? M.cleanPlan(saved) : null; } catch { S.plan = null; }
   if (!S.plan) S.plan = DEMOS[0].make();
+  S.contours = !!S.plan.site.ground;
   const pl = store.get(K.places); S.places = pl && Array.isArray(pl.list) ? pl : { list: [], from: '' };
   build();
+  whoAmI().then(w => { if (w.state === 'active' && w.me && w.me.role && btn3d) btn3d.hidden = false; }).catch(() => {});
   const due = M.dueSoon(S.plan, M.todayISO());
   if (due.length) setTimeout(() => toast((due.length === 1 ? 'Coming up: ' : due.length + ' things coming up, first: ') + due[0].title + ' (' + shortDay(due[0].date) + ')', 6000), g.preview ? 5600 : 800);
   if (g.preview) toast('LT-Planner is not open to everyone yet. You can try it because you are staff.', 5000);
@@ -70,7 +74,7 @@ function autosave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { if
 function commit(key) { hist.commit(key); autosave(); drawAll(); }
 const exportPlan = () => M.pruneBlocks(M.cleanPlan(JSON.parse(JSON.stringify(S.plan))));
 const fileName = (ext = M.EXT) => (S.plan.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'plan') + ext;
-function loadPlan(p) { if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); S.plan = p; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
+function loadPlan(p) { if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); S.plan = p; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
 
 /* ---------- the page ---------- */
 function build() {
@@ -97,11 +101,12 @@ function build() {
   undoB = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', disabled: true, onclick: () => hist.undo() }, [icon('undo')]);
   redoB = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', disabled: true, onclick: () => hist.redo() }, [icon('redo')]);
   titleEl = el('span', { class: 'small muted hide-sm pl-title' });
-  const slot = el('div', { class: 'pr-slot' }, [fileWrap, undoB, redoB, el('span', { class: 'sp' }), titleEl]);
+  btn3d = el('button', { type: 'button', class: 'btn sm', hidden: true, title: '3D view (beta). Staff only while this is being built', 'aria-label': '3D view (beta)', onclick: open3d }, ['3D', el('span', { class: 'hide-sm', text: ' view (beta)' })]);
+  const slot = el('div', { class: 'pr-slot' }, [fileWrap, undoB, redoB, btn3d, el('span', { class: 'sp' }), titleEl]);
 
   /* left: tools, crops, blocks */
-  const T = [['select', 'Select', 'up', 'V'], ['bed', 'Bed', 'rect', 'B'], ['area', 'Area', 'grid', 'A'], ['path', 'Path', 'line', 'P'], ['fence', 'Fence', 'line', 'F'],
-    ['plant', 'Plant', 'tag', 'L'], ['tank', 'Water tank', 'ellipse', 'W'], ['pipe', 'Drip line', 'line', 'D'], ['bench', 'Seed bench', 'table', 'S'], ['note', 'Note', 'text', 'N'], ['task', 'Job', 'calendar', 'J']];
+  const T = [['select', 'Select', 'up', 'V'], ['bed', 'Bed', 'rect', 'B'], ['area', 'Area', 'grid', 'A'], ['path', 'Path', 'path', 'P'], ['fence', 'Fence', 'fence', 'F'],
+    ['plant', 'Plant', 'tag', 'L'], ['rows', 'Crop rows', 'rows', 'R'], ['ground', 'Shape ground', 'hill', 'G'], ['tank', 'Water tank', 'ellipse', 'W'], ['pipe', 'Drip line', 'drip', 'D'], ['bench', 'Seed bench', 'table', 'S'], ['note', 'Note', 'text', 'N'], ['task', 'Job', 'calendar', 'J']];
   const toolGrid = el('div', { class: 'addgrid', role: 'group', 'aria-label': 'Tools' });
   for (const [k, l, ic, key] of T) { const b = el('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', title: l + ' (' + key + ')', onclick: () => setTool(k) }, [icon(ic), l]); toolBtns[k] = b; toolGrid.append(b); }
   const cropSel = el('select', { 'aria-label': 'Crop for the Plant tool', onchange: e => { S.crop = e.target.value; } }, cropOptions());
@@ -110,6 +115,7 @@ function build() {
   const left = el('aside', { class: 'pr-left', 'aria-label': 'Tools and blocks' }, [
     el('h3', { text: 'Draw' }), toolGrid,
     el('p', { class: 'small muted', text: 'Beds, areas, tanks and benches: drag a box. Paths, fences and drip lines: tap each corner, double-tap or Enter to finish.' }),
+    brushBar(),
     el('h3', { text: 'Plant tool' }), el('label', { class: 'small' }, ['Crop', cropSel]),
     el('h3', { text: 'Blocks' }), blocksEl,
     el('h3', { text: 'Coming up' }), calEl = el('div'),
@@ -129,7 +135,7 @@ function build() {
     sunB, el('span', { class: 'grow' }), icon('calendar'), dateIn, dateLbl]);
   svg = sv('svg', { class: 'pl-svg', role: 'img', 'aria-label': 'The plan, seen from above', tabindex: '0' });
   world = sv('g'); overlay = sv('g'); svg.append(world, overlay);
-  const stage = el('div', { class: 'pr-stage' }, [stageBar, el('div', { class: 'pr-canvas pl-canvas' }, [svg])]);
+  const stage = el('div', { class: 'pr-stage' }, [stageBar, el('div', { class: 'pr-canvas pl-canvas' }, [svg, floatEl || el('span')])]);
 
   /* right: tree and properties */
   const treeBox = el('div');
@@ -137,14 +143,14 @@ function build() {
   const right = el('aside', { class: 'pr-right', 'aria-label': 'Feature tree and properties' }, [
     el('div', { class: 'pane tree-pane' }, [(() => { const f = fold('planner', 'Feature tree', true); f.body.append(treeBox); return f.box; })()]),
     el('div', { class: 'pane props-pane' }, [propsEl])]);
-  const mob = el('nav', { class: 'pl-mob' }, [el('button', { type: 'button', class: 'btn', text: 'Tools', onclick: () => document.body.classList.toggle('show-left') }), el('button', { type: 'button', class: 'btn', text: 'Tree and details', onclick: () => document.body.classList.toggle('show-right') })]);
+  const mob = el('nav', { class: 'pl-mob' }, [el('button', { type: 'button', class: 'btn', text: 'Tools', onclick: () => { document.body.classList.remove('show-right'); document.body.classList.toggle('show-left'); } }), el('button', { type: 'button', class: 'btn', text: 'Tree and details', onclick: () => { document.body.classList.remove('show-left'); document.body.classList.toggle('show-right'); } })]);
   app.textContent = '';
   app.append(el('div', { class: 'pr-shell' }, [topBar({ tool: 'planner', slot }), el('div', { class: 'pr-view' }, [left, stage, right]), mob]));
 
   tree = featureTree(treeBox, {
     label: 'Feature tree', empty: 'Nothing in this plan yet. Pick a tool on the left.',
     nodes: treeNodes, isSelected: id => S.sel.has(id),
-    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group' }[n.kind] || 'rect'),
+    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group', rows: 'grid' }[n.kind] || 'rect'),
     onSelect: (id, add) => { if (id.startsWith('f:')) return; select(id, add); },
     onToggle: (id, flag) => {
       const list = id.startsWith('f:') ? items().filter(it => it.folder === id.slice(2)) : [byId(id)].filter(Boolean);
@@ -201,11 +207,19 @@ function drawItem(g, it, plan, faded) {
   const grp = sv('g', { 'data-id': it.id, opacity: faded ? 0.35 : null });
   if (k.box) {
     const tf = `translate(${it.x} ${it.y}) rotate(${it.rot})`;
-    const fill = it.kind === 'bed' ? COL.bedFill : it.kind === 'area' ? it.fill : it.kind === 'tank' ? COL.tank : COL.bench;
+    const fill = it.kind === 'bed' ? COL.bedFill : it.kind === 'area' ? it.fill : it.kind === 'tank' ? COL.tank : it.kind === 'rows' ? '#DCE8C4' : COL.bench;
     const stroke = it.kind === 'bed' ? COL.bed : it.kind === 'area' ? 'none' : '#4A5A6A';
     const shape = it.kind === 'tank' ? sv('ellipse', { rx: it.w / 2, ry: it.h / 2 }) : sv('rect', { x: -it.w / 2, y: -it.h / 2, width: it.w, height: it.h, rx: it.kind === 'bed' ? Math.min(0.08, it.w / 10) : 0 });
     shape.setAttribute('transform', tf); shape.setAttribute('fill', fill); shape.setAttribute('stroke', stroke); shape.setAttribute('stroke-width', it.kind === 'bed' && it.raised > 0 ? 3 : 1.5); shape.setAttribute('vector-effect', 'non-scaling-stroke');
     grp.append(shape);
+    if (it.kind === 'rows') {      // the rows themselves: one line per row (or a light hatch when they would be too close to tell apart)
+      const L = M.rowsLayout(it), px = L.rowSpacing * S.view.scale, gr = M.growth(it, plan.date), cc = COL.plant[(M.CROPS[it.crop] || M.CROPS.other)[1]] || COL.plant.bush;
+      if (gr === null && !faded) grp.setAttribute('opacity', 0.35);
+      const step = px >= 3 ? 1 : Math.ceil(3 / Math.max(px, 0.01)), lines = [];
+      for (let i = 0; i < L.rows && lines.length < 400; i += step) { const y = -it.h / 2 + i * L.rowSpacing; lines.push('M' + (-it.w / 2) + ' ' + y + 'H' + (it.w / 2)); }
+      const rl = sv('path', { d: lines.join(''), fill: 'none', stroke: cc, 'stroke-width': Math.max(1.5, Math.min(5, L.plantSpacing * S.view.scale * 0.6)), 'stroke-opacity': 0.8, 'vector-effect': 'non-scaling-stroke', 'stroke-dasharray': L.plantSpacing * S.view.scale >= 5 ? '1 ' + Math.max(2, L.plantSpacing * S.view.scale - 1) : null, 'stroke-linecap': 'round' });
+      rl.setAttribute('transform', tf); grp.append(rl);
+    }
     if (it.kind !== 'area' || it.w * S.view.scale > 60) grp.append(label(it.name, it.x, it.y + (it.kind === 'area' ? 0 : it.h / 2 + 0.05), it.kind === 'area'));
   } else if (k.line) {
     const d = 'M' + it.pts.map(p => p.join(' ')).join('L');
@@ -242,16 +256,29 @@ function label(text, x, y, centre, note) {
 }
 /* drawAll: the plan and every panel.  drawScene: only the plan (while dragging, panning and zooming, so the tree keeps focus). */
 function drawAll() { if (!S.view || !svg) return; drawScene(); tree.render(); drawProps(); drawBlocks(); drawCal(); drawPlaces(); }
+/* contour lines from the plan's ground heights (worked out once per height set and interval, then reused) */
+let contourCache = { gd: null, step: 0, lines: [] };
+function drawContours() {
+  const gd = S.plan.site.ground;
+  if (!(contourCache.live || (contourCache.gd === gd && contourCache.step === S.contourStep))) { const g = groundGrid(); contourCache = { gd, step: S.contourStep, lines: g ? TR.contours(g, S.contourStep) : [] }; }
+  for (const c of contourCache.lines) {
+    const major = Math.abs(c.level / (S.contourStep * 5) - Math.round(c.level / (S.contourStep * 5))) < 1e-6;
+    const d = c.lines.map(l => 'M' + l.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L')).join('');
+    world.append(sv('path', { d, fill: 'none', stroke: '#8a6d3b', 'stroke-width': major ? 1.6 : 0.8, 'stroke-opacity': major ? 0.9 : 0.6, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' }));
+    if (major && c.lines.length) { const l = c.lines.reduce((b, x) => (x.length > b.length ? x : b), c.lines[0]), p = l[Math.floor(l.length / 2)]; const t = sv('text', { x: p[0], y: p[1], 'font-size': 11 / S.view.scale, fill: '#6b5226', 'pointer-events': 'none' }); t.textContent = c.level.toFixed(1) + ' m'; world.append(t); }
+  }
+}
 function drawScene() {
   if (!S.view || !svg) return;
   const v = S.view, { w, h } = S.plan.site;
   world.setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.scale})`);
-  world.textContent = ''; overlay.textContent = '';
+  world.textContent = ''; overlay.textContent = ''; ring = null;
   // ground and grid (major line every 5 m, or 1 m when zoomed in)
   world.append(sv('rect', { x: 0, y: 0, width: w, height: h, class: 'pl-ground' }));
   const step = v.scale > 40 ? 1 : v.scale > 8 ? 5 : 10, gp = sv('path', { class: 'pl-grid', 'vector-effect': 'non-scaling-stroke' }); let d = '';
   for (let x = step; x < w; x += step) d += `M${x} 0V${h}`; for (let y = step; y < h; y += step) d += `M0 ${y}H${w}`;
   gp.setAttribute('d', d); world.append(gp);
+  if (S.contours && S.plan.site.ground) drawContours();
   const editing = S.ctx ? S.plan.blocks[S.ctx] : null;
   if (editing) { S.plan.items.forEach(it => drawItem(world, it, S.plan, true)); world.append(sv('rect', { x: -1000, y: -1000, width: 3000, height: 3000, fill: 'var(--desk)', opacity: 0.55 })); }
   items().forEach(it => drawItem(world, it, S.plan, false));
@@ -302,10 +329,19 @@ function handlesFor(it) {
 }
 
 /* ---------- tools and pointer ---------- */
+const smallScreen = () => window.matchMedia('(max-width:860px)').matches;
+const TOOL_HINT = { bed: 'Bed: drag a box on the plan.', area: 'Area: drag a box on the plan.', rows: 'Crop rows: drag a box; rows run along its width.', tank: 'Water tank: drag a box.', bench: 'Seed bench: drag a box.',
+  path: 'Path: tap each corner, then tap the last one again to finish.', fence: 'Fence: tap each corner, then tap the last one again to finish.', pipe: 'Drip line: tap each corner, then tap the last one again to finish.',
+  plant: 'Plant: tap where it goes.', note: 'Note: tap where it goes.', task: 'Job: tap where it is.', ground: 'Shape ground: drag on the plan. Two fingers move and zoom.', select: 'Select: tap an item; drag empty space to move around.' };
 function setTool(t) {
   S.tool = t; S.draft = null;
   Object.entries(toolBtns).forEach(([k, b]) => b.setAttribute('aria-pressed', String(k === t)));
-  svg.style.cursor = t === 'select' ? 'default' : 'crosshair'; drawAll();
+  svg.style.cursor = t === 'select' ? 'default' : 'crosshair';
+  if (brushEl) brushEl.hidden = t !== 'ground';
+  if (floatEl) floatEl.hidden = t !== 'ground';
+  if (smallScreen() && document.body.classList.contains('show-left')) { document.body.classList.remove('show-left'); const h = TOOL_HINT[t]; if (h) toast(h, 3500); }
+  if (t === 'ground') { S.contours = true; if (!S.plan.site.ground && S.contourStep > 0.25) S.contourStep = 0.25; }
+  drawAll();
 }
 function hitTest(p) {
   const L = items();
@@ -325,7 +361,7 @@ function wireCanvas() {
   const pointers = new Map(); let drag = null, pinch = null;
   svg.addEventListener('pointerdown', e => {
     svg.focus(); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale }; drag = null; return; }
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; return; }
     const p = toWorld(e), sp = [snap(p[0]), snap(p[1])];
     if (e.button === 1 || (e.button === 0 && e.altKey)) { drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: S.view.x, vy: S.view.y }; return; }
     const hd = e.target.getAttribute && e.target.getAttribute('data-handle');
@@ -338,6 +374,7 @@ function wireCanvas() {
       drag = { move: true, from: p, last: [0, 0], moving };
       return;
     }
+    if (S.tool === 'ground') { if (e.pointerType === 'mouse' && e.button !== 0) return; startSculpt(p); drag = sculptDrag; return; }
     const kind = M.KINDS[S.tool];
     if (kind.box) { S.draft = { box: true, a: sp, b: sp }; drag = { draw: true }; drawAll(); return; }
     if (kind.line) {
@@ -351,8 +388,9 @@ function wireCanvas() {
   });
   svg.addEventListener('pointermove', e => {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pinch && pointers.size === 2) { const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), bx = svg.getBoundingClientRect(); zoomBy((pinch.s * d / pinch.d) / S.view.scale, (a[0] + b[0]) / 2 - bx.left, (a[1] + b[1]) / 2 - bx.top); return; }
+    if (pinch && pointers.size === 2) { const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), bx = svg.getBoundingClientRect(), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; S.view.x += mx - pinch.mx; S.view.y += my - pinch.my; pinch.mx = mx; pinch.my = my; zoomBy((pinch.s * d / pinch.d) / S.view.scale, mx - bx.left, my - bx.top); return; }
     const p = toWorld(e);
+    if (S.tool === 'ground') { moveRing(p); if (drag && drag.sculpt) { sculptTo(p); return; } if (!drag) return; }
     if (S.draft && S.draft.pts && !drag) { S.draft.hover = [snap(p[0]), snap(p[1])]; drawScene(); return; }
     if (!drag) return;
     if (drag.pan) { S.view.x = drag.vx + e.clientX - drag.sx; S.view.y = drag.vy + e.clientY - drag.sy; drawScene(); return; }
@@ -373,11 +411,12 @@ function wireCanvas() {
     pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null;
     if (!drag) return;
     const d = drag; drag = null;
+    if (d.sculpt) { endSculpt(); return; }
     if (d.draw) {
       const dr = S.draft; S.draft = null;
       let [x0, y0] = dr.a, [x1, y1] = dr.b;
-      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6] }[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; }
-      add({ kind: S.tool, name: M.KINDS[S.tool].name, x: r2((x0 + x1) / 2), y: r2((y0 + y1) / 2), w: r2(Math.abs(x1 - x0)), h: r2(Math.abs(y1 - y0)), rot: 0 });
+      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6], rows: [10, 4] }[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; }
+      add(Object.assign({ kind: S.tool, name: S.tool === 'rows' ? M.CROPS[S.crop][0] + ' rows' : M.KINDS[S.tool].name, x: r2((x0 + x1) / 2), y: r2((y0 + y1) / 2), w: r2(Math.abs(x1 - x0)), h: r2(Math.abs(y1 - y0)), rot: 0 }, S.tool === 'rows' ? { crop: S.crop } : {}));
       return;
     }
     if ((d.move || d.handle) && d.moved) commit();
@@ -399,6 +438,113 @@ function add(raw) {
   items().push(it); S.sel = new Set([it.id]); commit();
 }
 
+/* ---------- 3D view (beta, staff only) ---------- */
+async function open3d() {
+  btn3d.disabled = true;
+  try { const mod = await import('./view3d.js'); await mod.open3D({ plan: exportPlan(), M, TR, date: S.plan.date }); }
+  catch (e) { toast('The 3D view could not start: ' + (e && e.message ? e.message : 'unknown error'), 6000); }
+  btn3d.disabled = false;
+}
+
+
+/* ---------- shaping the ground by hand ---------- */
+let gridCache = { gd: null, g: null };
+function groundGrid() { const gd = S.plan.site.ground; if (!gd) return null; if (gridCache.gd !== gd) gridCache = { gd, g: TR.unpackGrid(gd) }; return gridCache.g; }
+let brushEl, brushInfo, floatEl, ring = null, sculptDrag = null;
+const POWER = { raise: [0.01, 0.03, 0.08], lower: [0.01, 0.03, 0.08], smooth: [0.2, 0.4, 0.8], flatten: [0.15, 0.35, 0.7] };
+const BRUSH_OPS = [['raise', 'Raise'], ['lower', 'Lower'], ['smooth', 'Smooth'], ['flatten', 'Flatten']];
+function brushBar() {
+  const b = S.brush, ops = el('div', { class: 'addgrid', role: 'group', 'aria-label': 'Ground brush' });
+  const paint = () => document.querySelectorAll('[data-op]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.op === b.op)));
+  for (const [k, l] of BRUSH_OPS) ops.append(el('button', { type: 'button', class: 'chip', 'data-op': k, 'aria-pressed': String(k === b.op), onclick: () => { b.op = k; paint(); } }, [l]));
+  const setSize = v => { b.size = Math.min(30, Math.max(0.5, Math.round(v * 2) / 2)); size.value = String(b.size); lbl.textContent = flbl.textContent = b.size + ' m'; if (ring) ring.setAttribute('r', b.size * S.view.scale); };
+  const size = el('input', { type: 'range', min: '0.5', max: '30', step: '0.5', value: String(b.size), 'aria-label': 'Brush size in metres', oninput: e => setSize(+e.target.value) }), lbl = el('span', { class: 'small', text: b.size + ' m' }), flbl = el('span', { class: 'small', text: b.size + ' m' });
+  floatEl = el('div', { class: 'pl-brushfloat', role: 'group', 'aria-label': 'Ground brush (quick)', hidden: true }, [
+    ...BRUSH_OPS.map(([k, l]) => el('button', { type: 'button', class: 'chip', 'data-op': k, 'aria-pressed': String(k === b.op), onclick: () => { b.op = k; paint(); } }, [l])),
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Smaller brush', onclick: () => setSize(b.size > 3 ? b.size / 1.5 : b.size - 0.5) }, [icon('zoomOut')]), flbl,
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Bigger brush', onclick: () => setSize(b.size >= 2 ? b.size * 1.5 : b.size + 0.5) }, [icon('zoomIn')])]);
+  const pow = el('select', { 'aria-label': 'Brush strength', onchange: e => { b.power = +e.target.value; } }, [['0', 'Gentle'], ['1', 'Normal'], ['2', 'Strong']].map(([v, t]) => el('option', { value: v, text: t })));
+  pow.value = String(Math.min(2, b.power)); b.power = +pow.value;
+  brushInfo = el('p', { class: 'small muted', text: 'Move over the plan to see the height.' });
+  brushEl = el('div', { class: 'pl-guide', hidden: true }, [el('b', { text: 'Shape ground' }),
+    el('p', { class: 'small', text: 'Drag to paint hills and hollows. Raise and Lower change the height, Smooth softens bumps, Flatten pulls the ground to the height where you start dragging (good for a pad or terrace). Ctrl+Z undoes a stroke.' }),
+    ops, el('label', { class: 'small pl-field' }, ['Brush size ', lbl, size]), el('label', { class: 'small pl-field' }, ['Strength', pow]), brushInfo]);
+  return brushEl;
+}
+function moveRing(p) {
+  if (!ring) { ring = sv('circle', { fill: 'none', stroke: '#2b6cb0', 'stroke-width': 1.5, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' }); overlay.append(ring); }
+  const v = S.view; ring.setAttribute('cx', p[0] * v.scale + v.x); ring.setAttribute('cy', p[1] * v.scale + v.y); ring.setAttribute('r', S.brush.size * v.scale);   // the overlay is in screen pixels
+  if (!brushInfo) return; const g = (sculptDrag && sculptDrag.g) || groundGrid();
+  if (!g) { brushInfo.textContent = 'Flat ground. Height 0 m (heights are relative, so 0 is where you start).'; return; }
+  const h = TR.heightAt(g, p[0], p[1]), sl = TR.slopeAt(g, p[0], p[1]);
+  brushInfo.textContent = 'Height ' + r2(h) + ' m, slope ' + Math.round(sl.pct) + '%' + (sl.pct >= 2 ? ', falls toward ' + ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round((((sl.aspect - (S.plan.site.north || 0)) % 360 + 360) % 360) / 45) % 8] : '') + '.';
+}
+function startSculpt(p) {
+  const site = S.plan.site, had = groundGrid();
+  let g = had ? TR.fitGrid(had, site.w, site.h) : TR.flatSite(site.w, site.h);
+  if (g === had) g = { cell: had.cell, nx: had.nx, ny: had.ny, z: had.z.slice() };   // work on a copy: the saved ground only changes when the stroke ends
+  const b = S.brush, amt = POWER[b.op][Math.min(2, b.power)], level = TR.heightAt(g, p[0], p[1]);
+  sculptDrag = { sculpt: true, g, stroke: TR.brushStroke(g, b.op, b.size, amt, level), raf: 0, hold: 0, at: p, still: performance.now() };
+  sculptDrag.changed = sculptDrag.stroke.to(p[0], p[1]); liveDraw();
+  sculptDrag.hold = setInterval(() => { const d = sculptDrag; if (d && performance.now() - d.still > 180 && d.stroke.again()) { d.changed = true; liveDraw(); } }, 140);
+}
+function sculptTo(p) { const d = sculptDrag; if (!d) return; if (Math.hypot(p[0] - d.at[0], p[1] - d.at[1]) > 1e-6) d.still = performance.now(); d.at = p; if (d.stroke.to(p[0], p[1])) d.changed = true; liveDraw(); }
+/* a second finger (pinch to zoom) or Escape stops the stroke without keeping it */
+function cancelSculpt() { const d = sculptDrag; sculptDrag = null; if (!d) return; clearInterval(d.hold); if (d.raf) cancelAnimationFrame(d.raf); contourCache = { gd: null, step: 0, lines: [] }; drawScene(); }
+/* while shaping, pick a contour interval that shows the shape (unless the person chose one) */
+function autoStep(g) { if (S.stepSet) return; const r = TR.range(g), f = r.max - r.min; S.contourStep = f < 0.6 ? 0.05 : f < 1.5 ? 0.1 : f < 4 ? 0.25 : f < 10 ? 0.5 : 1; }
+function liveDraw() {
+  const d = sculptDrag; if (!d || d.raf) return;
+  d.raf = requestAnimationFrame(() => { d.raf = 0; autoStep(d.g); contourCache = { live: true, lines: TR.contours(d.g, S.contourStep) }; const at = d.at; drawScene(); if (at) moveRing(at); });
+}
+function endSculpt() {
+  const d = sculptDrag; sculptDrag = null; if (!d) return;
+  clearInterval(d.hold); if (d.raf) cancelAnimationFrame(d.raf);
+  if (!d.changed) return;
+  autoStep(d.g); S.plan.site.ground = TR.packGrid(d.g); S.contours = true; contourCache = { gd: null, step: 0, lines: [] }; commit();
+}
+
+/* ---------- ground heights from a file ---------- */
+function groundPanel(s) {
+  const gd = s.ground, g = gd && TR.unpackGrid(gd), box = el('div', { class: 'pl-guide' });
+  if (g) {
+    const r = TR.range(g), sl = el('select', { 'aria-label': 'Contour interval', onchange: e => { S.contourStep = +e.target.value; S.stepSet = true; drawScene(); } }, [0.05, 0.1, 0.25, 0.5, 1, 2, 5].map(v => el('option', { value: String(v), text: v + ' m' })));
+    sl.value = String(S.contourStep);
+    const cb = el('input', { type: 'checkbox', checked: S.contours, onchange: e => { S.contours = e.target.checked; drawScene(); } });
+    box.append(el('b', { text: 'Ground heights are set' }), el('p', { class: 'small', text: 'Lowest ' + r2(r.min) + ' m, highest ' + r2(r.max) + ' m: a fall of ' + r2(r.max - r.min) + ' m across the site. One height every ' + gd.cell + ' m.' }),
+      el('label', { class: 'small pl-check' }, [cb, ' Show contour lines']), el('label', { class: 'small pl-field' }, ['Contour every', sl]),
+      el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Replace from a file…', onclick: importGround }), el('button', { type: 'button', class: 'btn sm', text: 'Remove', onclick: async () => { if (!(await confirmBox('Remove ground heights', 'The site goes back to flat ground.', 'Remove'))) return; delete S.plan.site.ground; S.contours = false; commit(); } })]));
+  } else box.append(el('b', { text: 'Ground heights' }), el('p', { class: 'small', text: 'The ground is flat until you add heights. Shape it by hand with the Shape ground tool (G), or bring in real mapping data from a file: an ASCII grid (.asc, such as a free 1 m LiDAR ground model) or a list of survey points (.csv or .xyz with x, y, height on each line). The file stays on your device.' }),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Add ground heights from a file…', onclick: importGround })]));
+  return box;
+}
+async function importGround() {
+  const f = await pickFile('.asc,.tif,.tiff,.txt,.csv,.xyz,image/tiff,text/plain,text/csv'); if (!f) return;
+  let data;
+  try {
+    const head = new Uint8Array(await f.slice(0, 4).arrayBuffer()), isTiff = (head[0] === 0x49 && head[1] === 0x49 && head[2] === 42) || (head[0] === 0x4d && head[1] === 0x4d && head[3] === 42) || (head[0] === 0x49 && head[1] === 0x49 && head[2] === 43);
+    if (isTiff) data = await parseGeoTiff(await f.arrayBuffer());
+    else { const text = await f.text(); data = /^\s*ncols\b/i.test(text) ? TR.parseAscii(text) : TR.parsePoints(text); }
+  } catch (e) { toast(e.message || 'That file could not be read.', 6000); return; }
+  const s = S.plan.site, crs = el('select', { 'aria-label': 'Coordinates in the file' }, [el('option', { value: 'utm', text: 'Metres (UTM or MGA, e.g. MGA zone 56)' }), el('option', { value: 'latlon', text: 'Degrees (longitude, latitude)' })]);
+  if (data.crs && data.crs.kind === 'latlon') crs.value = 'latlon'; else if (data.crs && data.crs.kind === 'utm') crs.value = 'utm'; else if (data.kind === 'grid' ? data.xll > -400 && data.xll < 400 && data.yll > -100 && data.yll < 100 : data.xs.every(v => Math.abs(v) <= 360) && data.ys.every(v => Math.abs(v) <= 90)) crs.value = 'latlon';
+  const cell = el('select', { 'aria-label': 'Height every' }, [0.5, 1, 2, 5, 10].map(v => el('option', { value: String(v), text: v + ' m' }))); cell.value = s.w * s.h > 100000 ? '2' : '1';
+  const msg = el('p', { class: 'small', role: 'status' });
+  const d = dialog('Ground heights from a file', [el('div', {}, [
+    el('p', { text: (data.kind === 'grid' ? 'Height grid: ' + data.ncols + ' x ' + data.nrows + ' values, one every ' + data.cs + ' m.' : data.xs.length.toLocaleString() + ' survey points.') }),
+    el('p', { class: 'pl-warn small', text: 'Your site is placed using its centre at latitude ' + s.lat + ', longitude ' + s.lon + ', with north at ' + s.north + ' degrees. If those are not right, close this and set them in Plan settings first, or the heights will land in the wrong place.' }),
+    el('label', { class: 'small pl-field' }, ['Coordinates in the file', crs]), el('label', { class: 'small pl-field' }, ['Keep one height every', cell]), msg,
+    (data.crs && data.crs.kind === 'unknown') ? el('p', { class: 'small pl-warn', text: 'This file uses a map projection I do not recognise' + (data.crs.epsg ? ' (EPSG ' + data.crs.epsg + ')' : '') + '. Check the coordinate type below, or ask for the file in MGA or UTM metres or in degrees.' }) : (data.crs && data.crs.kind === 'utm') ? el('p', { class: 'small', text: 'Map projection: UTM / MGA zone ' + data.crs.zone + ' (found in the file).' }) : null,
+    el('p', { class: 'small muted', text: 'LiDAR files show bare ground, not recent earthworks or raised beds. Phone GPS heights are not accurate enough to use.' }),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Add to the plan', onclick: () => {
+      try {
+        const r = TR.importHeights(data, s, { crs: crs.value, cell: +cell.value, zone: data.crs && data.crs.kind === 'utm' ? data.crs.zone : undefined });
+        if (r.covered < 0.98 && !confirm('The file covers only ' + Math.round(r.covered * 100) + '% of your site. The rest will be filled in from the nearest heights. Use it anyway?')) return;
+        s.ground = TR.packGrid(r.grid); S.contours = true; d.close(); commit(); toast('Ground heights added: ' + r2(r.min) + ' to ' + r2(r.max) + ' m.', 5000);
+      } catch (e) { msg.className = 'small pl-warn'; msg.textContent = e.message; }
+    } }), el('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => d.close() })])])]);
+}
+
 /* ---------- keyboard ---------- */
 function wireKeys() {
   document.addEventListener('keydown', e => {
@@ -408,6 +554,7 @@ function wireKeys() {
     if (mod && k === 'y') { e.preventDefault(); hist.redo(); return; }
     if (mod && k === 'd') { e.preventDefault(); duplicate(); return; }
     if (mod && k === 'b') { e.preventDefault(); makeBlockFromSel(); return; }
+    if (e.key === 'Escape' && sculptDrag) { cancelSculpt(); return; }
     if (e.key === 'Escape') { if (S.draft) { S.draft = null; drawAll(); } else if (S.ctx) doneEditing(); else select(null); return; }
     if (e.key === 'Enter' && S.draft && S.draft.pts) { finishLine(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.size) { e.preventDefault(); removeSel(); return; }
@@ -415,7 +562,7 @@ function wireKeys() {
       e.preventDefault(); const g = S.plan.site.grid * (e.shiftKey ? 5 : 1), d = { ArrowLeft: [-g, 0], ArrowRight: [g, 0], ArrowUp: [0, -g], ArrowDown: [0, g] }[e.key];
       [...S.sel].map(byId).filter(it => it && !it.locked).forEach(it => M.moveItem(it, d[0], d[1])); commit('nudge'); return;
     }
-    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task' }[k]; if (t) setTool(t); }
+    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task', r: 'rows', g: 'ground' }[k]; if (t) setTool(t); }
   });
 }
 function removeSel() { const L = items(); const keep = L.filter(it => !S.sel.has(it.id) || it.locked); L.length = 0; L.push(...keep); S.sel.clear(); commit(); }
@@ -509,6 +656,8 @@ function drawProps() {
       PACKS[s.country] ? el('label', { class: 'small pl-field' }, ['Climate zone', (() => { const sl = el('select', { onchange: e => { s.zone = e.target.value; commit(); } }, [el('option', { value: '', text: 'Choose your zone' })].concat((() => { const out = [], groups = {}; for (const [v, l, g] of PACKS[s.country].zones) { const o = el('option', { value: v, text: l }); if (!g) out.push(o); else { if (!groups[g]) { groups[g] = el('optgroup', { label: g }); out.push(groups[g]); } groups[g].append(o); } } return out; })())); sl.value = s.zone; return sl; })()]) : null,
       located() ? null : el('p', { class: 'small pl-warn', text: 'Planting guide: ' + MESSAGE }),
       el('div', { class: 'pl-row' }, [numF('Latitude', s, 'lat', 0.1, -90, 90), numF('Longitude', s, 'lon', 0.1, -180, 180)]),
+      sec('Ground heights'),
+      groundPanel(s),
       el('label', { class: 'small pl-field' }, ['Snap to', (() => { const sl = el('select', { onchange: e => { s.grid = +e.target.value; commit(); } }, [0.1, 0.25, 0.5, 1].map(g => el('option', { value: String(g), text: g * 100 + ' cm' }))); sl.value = String(s.grid); return sl; })()]),
       el('p', { class: 'small muted', text: 'The country and zone choose the planting guide; latitude draws the sun path. Nothing leaves your device.' }));
     return;
@@ -525,6 +674,17 @@ function drawProps() {
   if (M.PLACE_KINDS.has(it.kind)) put(placePicker(it));
   section('Size and position');
   if (k.box) put(el('div', { class: 'pl-row' }, [numF('Width (m)', it, 'w', 0.1, 0.05, 2000), numF('Depth (m)', it, 'h', 0.1, 0.05, 2000)]), el('div', { class: 'pl-row' }, [numF('Centre x', it, 'x'), numF('Centre y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 5, -360, 360));
+  if (it.kind === 'rows') {
+    const L = M.rowsLayout(it);
+    section('Crop and dates');
+    put(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const g = GUIDES[e.target.value] || GUIDES.other; Object.assign(it, { crop: e.target.value, rowSpacing: g[4] || it.rowSpacing, plantSpacing: g[3] || it.plantSpacing }); if (/ rows$/.test(it.name)) it.name = M.CROPS[e.target.value][0] + ' rows'; commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
+      field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }),
+      el('div', { class: 'pl-row' }, [numF('Row spacing (m)', it, 'rowSpacing', 0.05, 0.05, 50), numF('Plant spacing (m)', it, 'plantSpacing', 0.05, 0.02, 50)]),
+      el('p', { class: 'small muted', text: L.rows.toLocaleString() + ' rows of ' + L.cols.toLocaleString() + ' plants = ' + L.count.toLocaleString() + ' plants. Saved as one rule, not one object per plant.' + (L.rowSpacing !== it.rowSpacing ? ' Spacing was widened to keep this under 2 million plants.' : '') }),
+      el('div', { class: 'pl-row' }, [field('Sow / plant', it.sow, v => { it.sow = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' }), field('Harvest', it.harvest, v => { it.harvest = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' })]),
+      numF('Remind me (days before)', it, 'remind', 1, 0, 60),
+      el('p', { class: 'small muted', text: 'Rows run along the width and are spaced across the depth. Turn the box to angle them.' }));
+  }
   if (it.kind === 'bed') put(numF('Raised (m, 0 = in the ground)', it, 'raised', 0.05, 0, 3), el('p', { class: 'small muted', text: 'Area: ' + r2(it.w * it.h) + ' m²' }));
   section('Planting in this bed');
   if ((it.kind === 'bed' || it.kind === 'bench') && !S.ctx) {

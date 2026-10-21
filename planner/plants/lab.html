@@ -5,15 +5,30 @@
 <label>Growth <input id="stage" type="range" min="0.1" max="1" step="0.05" value="1"></label>
 <label>Sun direction <input id="az" type="range" min="0" max="360" value="225"></label>
 <label>Sun height <input id="el" type="range" min="15" max="80" value="45"></label>
-<label>Show <select id="only"><option value="all">All plants</option><option value="fruits">Fruit close-up</option><option value="garden">Garden sample (structures)</option></select></label>
+<label>Show <select id="only"><option value="all">All plants</option><option value="fruits">Fruit close-up</option><option value="garden">Garden sample (structures)</option><option value="farm">20 acre farm (speed test)</option><option value="farm6">20 acre farm + whole corn field</option></select></label>
 <label>View <select id="view"><option value="top">Overhead</option><option value="side">Side</option><option value="iso">Isometric</option></select></label>
 <label><input id="sh" type="checkbox" checked>Shadows</label>
+<label>Quality <select id="q"><option value="low">Low (tablet)</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra (gaming PC)</option></select></label>
+<label id="zl" hidden>Zoom <input id="zoom" type="range" min="0" max="100" value="0"></label>
+<label id="pxl" hidden>Across <input id="px" type="range" min="-140" max="140" value="0"></label>
+<label id="pzl" hidden>Down <input id="pz" type="range" min="-140" max="140" value="0"></label>
+<label id="cml" hidden>Camera <select id="cm"><option value="o">Overhead</option><option value="p">Low fly-over</option></select></label>
 <label>Stress <select id="n"><option>1</option><option>50</option><option>200</option><option>1000</option></select></label>
 <span id="st"></span></div><canvas id="c"></canvas>
 <script type="module">
+import {loadConfig, whoAmI, signInUrl} from '../../kit/core.js';
+// Staff only (admin or moderator). This hides the lab from the public; it is not a lock on the files, which hold nothing private.
+const allowed = await (async()=>{ try{ await loadConfig(); const w=await whoAmI(); return w.state==='active' && !!(w.me&&w.me.role); }catch(e){ return false; } })();
+if(!allowed){
+  document.body.innerHTML='<main style="max-width:32rem;margin:15vh auto;padding:0 1rem;font:16px system-ui"><h1 style="font-size:1.3rem">Plant lab</h1><p>This page is for Lineage Tracker staff while the planner is being built.</p><p><a style="color:#9fd39f" href="'+signInUrl('planner/plants/lab.html')+'">Sign in</a></p></main>';
+  await new Promise(()=>{});
+}
 import * as THREE from './vendor/three.module.js';
 import {build as buildStruct} from './structures.js';
-import {PRESETS,generate,stats,fruitGeometry} from './plants.js';
+import {PRESETS,generate,stats,fruitGeometry,extent} from './plants.js';
+import {PlantField,orthoView,perspView,visibleTiles,getQuality,setQuality,FIELD_QUALITY} from './field.js';
+import {FieldView} from './fieldview.js';
+import {demoFarm,FARM_SPECIES} from './farm.js';
 const cv=document.getElementById('c'), r=new THREE.WebGLRenderer({canvas:cv,antialias:true,preserveDrawingBuffer:true});
 r.shadowMap.enabled=true; r.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene(); scene.background=new THREE.Color('#5b4a36');
@@ -27,9 +42,11 @@ function build(){
   scene.remove(group); group.traverse(o=>{if(o.geometry)o.geometry.dispose();}); group=new THREE.Group(); scene.add(group);
   const stage=+stage_.value, N=+n_.value; let tris=0, t0=performance.now();
   const sh=document.getElementById('sh').checked; r.shadowMap.enabled=sh; sun.castShadow=sh;
+  const farmMode=only_.value==='farm'||only_.value==='farm6'; for(const id of ['zl','pxl','pzl','cml']) document.getElementById(id).hidden=!farmMode;
+  if(farmMode){ buildFarm(); return; }
   if(N===1 && only_.value==='garden'){
     const put=(o,x,z,ry=0)=>{ o.position.set(x,0,z); o.rotation.y=ry; group.add(o); return o; };
-    const plant=(k,x,z,ry=0,sc=1)=>{ const g=generate(PRESETS[k],stage); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; m.scale.setScalar(sc); put(m,x,z,ry); };
+    const plant=(k,x,z,ry=0,sc=1)=>{ const g=generate(PRESETS[k],stage,{level:q_.value}); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; m.scale.setScalar(sc); put(m,x,z,ry); };
     const gnd=new THREE.Mesh(new THREE.PlaneGeometry(14,10),new THREE.MeshStandardMaterial({color:'#5f7a3c'})); gnd.rotation.x=-Math.PI/2; gnd.position.y=0.002; gnd.receiveShadow=true; group.add(gnd);
     put(buildStruct({type:'paling',length:12,height:1.5}),0,-4.6);
     put(buildStruct({type:'trellis',width:2.6,height:1.9}),-3.6,-4.3);
@@ -47,12 +64,12 @@ function build(){
     window.lab.focus={cx:0.5,cy:0.4,cz:-0.5,ext:7.3}; spanX=14; spanZ=10; }
   else if(N===1 && only_.value==='fruits'){ const ks=names.filter(k=>PRESETS[k].fruit&&PRESETS[k].fruit.count); ks.forEach((k,i)=>{ const g=fruitGeometry(PRESETS[k]); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; const fs=PRESETS[k].fruit; m.scale.setScalar(fs.shape.kind==='head'?1.0/fs.size:0.9/(fs.size*Math.max(fs.shape.height,0.35))); m.position.set(i*1.6-(ks.length-1)*0.8,0,0); group.add(m); });
     window.lab.focus={cx:0,cy:0.4,cz:0,ext:ks.length*0.34}; spanX=ks.length*1.7; spanZ=1.5; }
-  else if(N===1 && only_.value!=='all'){ const g=generate(PRESETS[only_.value],stage); tris=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; group.add(m);
+  else if(N===1 && only_.value!=='all'){ const g=generate(PRESETS[only_.value],stage,{level:q_.value}); tris=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; group.add(m);
     g.computeBoundingBox(); const bb=g.boundingBox, ext=Math.max(bb.max.x-bb.min.x,bb.max.z-bb.min.z,bb.max.y)*0.6+0.3; window.lab.focus={cx:(bb.max.x+bb.min.x)/2,cy:(bb.max.y)/2,cz:(bb.max.z+bb.min.z)/2,ext}; spanX=ext*1.3; spanZ=ext; }
-  else if(N===1){ window.lab.focus=null; names.forEach((k,i)=>{ const g=generate(PRESETS[k],stage); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; if(view_.value==='top') m.position.set((i%4)*9-13.5,0,Math.floor(i/4)*11-5.5); else m.position.set(i*7-24.5,0,0); group.add(m); }); spanX=view_.value==='top'?19:30; spanZ=view_.value==='top'?12:6; }
+  else if(N===1){ window.lab.focus=null; names.forEach((k,i)=>{ const g=generate(PRESETS[k],stage,{level:q_.value}); tris+=stats(g).tris; const m=new THREE.Mesh(g,mat); m.castShadow=m.receiveShadow=true; if(view_.value==='top') m.position.set((i%4)*9-13.5,0,Math.floor(i/4)*11-5.5); else m.position.set(i*7-24.5,0,0); group.add(m); }); spanX=view_.value==='top'?19:30; spanZ=view_.value==='top'?12:6; }
   else { // many plants: 3 variants shared across instances (instancing)
     const keys=['tomato','pumpkinVine','appleTree','corn']; const per=Math.ceil(N/keys.length), side=Math.ceil(Math.sqrt(N)); let idx=0;
-    keys.forEach((k,ki)=>{ const g=generate(PRESETS[k],stage), q=generate(PRESETS[k],stage); tris+=stats(g).tris; const im=new THREE.InstancedMesh(g,mat,per); im.castShadow=im.receiveShadow=true; const mm=new THREE.Matrix4();
+    keys.forEach((k,ki)=>{ const g=generate(PRESETS[k],stage,{level:q_.value}), q=generate(PRESETS[k],stage,{level:q_.value}); tris+=stats(g).tris; const im=new THREE.InstancedMesh(g,mat,per); im.castShadow=im.receiveShadow=true; const mm=new THREE.Matrix4();
       for(let j=0;j<per;j++){ const i=idx++; mm.compose(new THREE.Vector3((i%side)*2.2-side*1.1,0,Math.floor(i/side)*2.2-side*1.1),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),j*1.7),new THREE.Vector3(1,1,1)); im.setMatrixAt(j,mm);} group.add(im); });
     tris*=per; spanX=side*1.1+2; spanZ=side*1.1+2;
   }
@@ -67,7 +84,33 @@ function build(){
   r.setSize(cv.clientWidth,cv.clientHeight,false); r.render(scene,cam);
   st.textContent=`${N} plants · ${Math.round(tris).toLocaleString()} triangles · build ${bt.toFixed(0)} ms`;
 }
-view_=document.getElementById('view'); const stage_=document.getElementById('stage'),az_=document.getElementById('az'),el_=document.getElementById('el'),n_=document.getElementById('n'),st=document.getElementById('st');
-window.lab={build,fps:(frames=60)=>new Promise(res=>{let c=0,t=performance.now();(function f(){r.render(scene,cam);if(++c<frames)requestAnimationFrame(f);else res(frames/((performance.now()-t)/1000));})();})};
+view_=document.getElementById('view'); const q_=document.getElementById('q'); q_.value=getQuality(); const stage_=document.getElementById('stage'),az_=document.getElementById('az'),el_=document.getElementById('el'),n_=document.getElementById('n'),st=document.getElementById('st');
+window.lab={build,fps:(frames=60)=>new Promise(res=>{let c=0,t=performance.now();(function f(){r.render(scene,window.lab.useCam||cam);if(++c<frames)requestAnimationFrame(f);else res(frames/((performance.now()-t)/1000));})();})};
+// ---- 20 acre farm: only what the camera can see is drawn ----
+let fv=null, farmKey='';
+function buildFarm(){
+  const key=only_.value+'|'+q_.value+'|'+stage_.value; setQuality(q_.value);
+  const farm=demoFarm(only_.value==='farm6'?6:1);
+  if(!fv||farmKey!==key){
+    scene.remove(group); group=new THREE.Group(); scene.add(group); if(fv) fv.dispose();
+    fv=new FieldView(scene,mat,Object.fromEntries(FARM_SPECIES.map(k=>[k,PRESETS[k]]))); fv.shadows=false; fv.setDetail(+stage_.value,q_.value); farmKey=key;
+    const sp={}; for(const k of FARM_SPECIES){ const e=extent(PRESETS[k],+stage_.value); sp[k]={h:e.h,r:e.r,tris:[Math.round(stats(fv.geometry(k,0)).tris),Math.round(stats(fv.geometry(k,1)).tris),Math.round(stats(fv.geometry(k,2)).tris),8]}; }
+    window.lab.field=new PlantField({quality:q_.value,species:sp,blocks:farm.blocks});
+    const gm=new THREE.Mesh(new THREE.PlaneGeometry(285,285),new THREE.MeshStandardMaterial({color:'#6b5a3c'})); gm.rotation.x=-Math.PI/2; gm.position.y=-0.01; group.add(gm);
+    for(const s of farm.structures){ const b=new THREE.Mesh(s.type==='tank'?new THREE.CylinderGeometry(s.r,s.r,s.h,12):new THREE.BoxGeometry(s.w,s.h||0.3,s.d),new THREE.MeshStandardMaterial({color:s.type==='paddock'?'#7a8f4a':s.type==='greenhouse'?'#bcd6d0':'#8a8a86',transparent:s.type==='paddock',opacity:s.type==='paddock'?0.6:1})); b.position.set(s.x+(s.w||0)/2,(s.type==='paddock'?0.02:(s.h||0.3)/2),s.z+(s.d||0)/2); group.add(b); }
+  }
+  const t=+document.getElementById('zoom').value/100, halfH=150*Math.pow(2/150,t), cx=+document.getElementById('px').value, cz=+document.getElementById('pz').value;
+  const a=cv.clientWidth/cv.clientHeight, H=cv.clientHeight; let view;
+  const mode=document.getElementById('cm').value;
+  if(mode==='o'){ view=orthoView({cx,cz,halfH,aspect:a,heightPx:H}); cam.position.set(cx,150,cz+0.001); cam.up.set(0,0,-1); cam.lookAt(cx,0,cz); cam.left=-halfH*a; cam.right=halfH*a; cam.top=halfH; cam.bottom=-halfH; cam.updateProjectionMatrix(); }
+  else { const eye=[cx,2.5+halfH*0.25,cz+halfH*0.6], tg=[cx,0.8,cz-halfH*0.5]; view=perspView({eye,target:tg,fovDeg:55,aspect:a,heightPx:H,maxDist:500});
+    window.lab.pcam=window.lab.pcam||new THREE.PerspectiveCamera(55,a,0.2,900); const pc=window.lab.pcam; pc.aspect=a; pc.position.set(...eye); pc.up.set(0,1,0); pc.lookAt(...tg); pc.updateProjectionMatrix(); window.lab.useCam=pc; }
+  if(mode==='o') window.lab.useCam=cam;
+  const sel=window.lab.field.select(view); fv.apply(sel); window.lab.sel=sel.stats;
+  const sa=+az_.value*Math.PI/180, se=+el_.value*Math.PI/180; sun.position.set(Math.cos(sa)*Math.cos(se)*100,Math.sin(se)*100,Math.sin(sa)*Math.cos(se)*100); r.shadowMap.enabled=false; sun.castShadow=false;
+  r.setSize(cv.clientWidth,cv.clientHeight,false); r.render(scene,window.lab.useCam); const s=sel.stats;
+  window.lab.tris=s.tris; const info=r.info.render;
+  st.textContent=`${window.lab.field.count().toLocaleString()} plants · drawn ${s.drawn.toLocaleString()} (full ${s.full}, reduced ${s.reduced}, simple ${s.proxy}, flat ${s.marker}) · ${Math.round(s.tris).toLocaleString()} triangles · picked in ${s.ms.toFixed(1)} ms · ${r.info.render.calls} draw calls`;
+}
 document.getElementById('bar').addEventListener('input',build); addEventListener('resize',build); build();
 </script></body></html>

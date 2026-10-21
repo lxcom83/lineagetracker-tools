@@ -2,6 +2,9 @@
    One line per place:  code | name shown | typical last spring frost (month-day) | frost-free days | extra weeks tender crops wait | flags
    flags: w = mild winter (cool crops can also be sown through winter), h = hot summer (Jul-Aug), d = hot summer (Jun-Aug),
           x = very hot summer (Jun-Sep).  Southern hemisphere: H = warm summer (Jan-Feb), D = hot summer (Dec-Feb), X = very hot summer (Nov-Mar).
+   Australia: the Australian rows are typical values from Bureau of Meteorology station records (days a year with a screen minimum of 2 C or less;
+   last spring frost = about one frost day left), set by the planner author. The rows marked LOW in the research notes are estimates; check them against your own garden.
+   Rows for the tropical north (au-qld-north, au-wa-north, au-nt-top) are listed so people can pick them, but their months come from the hand-written tropical guide (guides.js), because wet and dry seasons rule there, not frost.
    South Africa: the South African regions are "estimate" rows: typical values set by the planner author from the South African Weather
    Service and Agricultural Research Council climate descriptions and local gardening calendars.  Check them against your own garden.
    Source "table": the United States and Canadian dates are the average frost dates of a representative town in each state or
@@ -201,6 +204,47 @@ nz-westcoast|West Coast|9-10|240|7|w
 nz-canterbury|Canterbury|10-10|190|2|
 nz-otago|Otago and coastal Southland|10-15|185|2|
 nz-central-otago|Central Otago and Queenstown|10-30|160|1|
+au-nsw-northcoast|NSW mid and north coast (Coffs Harbour, Port Macquarie)|8-5|320|0|w
+au-nsw-sydney|Sydney basin and Central Coast, Newcastle|8-1|340|0|w
+au-nsw-southcoast|Illawarra and NSW south coast|8-1|335|0|w
+au-nsw-hunter|Hunter Valley and outer western Sydney|9-5|255|1|w
+au-nsw-mountains|Blue Mountains and Southern Highlands|10-10|205|2|
+au-nsw-tablelands|Central Tablelands (Bathurst, Orange, Lithgow)|10-28|160|2|
+au-nsw-centralwest|Central west and south-west slopes (Cowra, Mudgee, Wagga Wagga)|10-20|180|2|D
+au-nsw-northwest|North-west slopes and plains (Gunnedah, Moree, Narrabri)|9-1|265|1|D
+au-nsw-northtablelands|Northern Tablelands (Armidale, Glen Innes)|11-5|150|3|
+au-nsw-goulburn|Southern Tablelands (Goulburn, Yass)|10-26|168|2|
+au-act|Canberra and Queanbeyan|11-5|150|3|
+au-nsw-snowy|Monaro and Snowy (Cooma, Jindabyne)|12-10|75|0|
+au-vic-melbourne|Melbourne and Bellarine|8-25|290|1|w
+au-vic-southwest|South-west coast (Port Fairy, Warrnambool)|7-25|335|0|w
+au-vic-gippsland|Gippsland|9-10|250|1|w
+au-vic-highlands|Central highlands (Ballarat, Daylesford)|11-10|145|3|
+au-vic-north|Northern and central Victoria (Bendigo, Shepparton)|10-15|195|2|D
+au-vic-mallee|Mallee and Sunraysia (Mildura)|8-31|259|0|D
+au-vic-alpine|High country valleys (Bright, Mansfield)|11-15|140|3|
+au-qld-north|Tropical north (Cairns, Townsville, Bowen, Mackay)|1-1|365|0|wX
+au-qld-seq|South-east Queensland (Brisbane, Gold and Sunshine Coasts)|7-20|350|0|wH
+au-qld-downs|Darling Downs (Toowoomba, Warwick, Dalby)|8-28|275|1|D
+au-qld-granite|Granite Belt (Stanthorpe, Applethorpe)|10-10|199|2|
+au-qld-central|Central Queensland (Rockhampton, Emerald, Longreach)|7-10|350|0|X
+au-tas-south|Hobart and the south-east|9-8|266|2|
+au-tas-north|Launceston and the north|10-5|200|2|
+au-tas-northwest|North-west coast (Devonport, Burnie)|9-20|240|2|
+au-tas-highlands|Central highlands and east coast uplands|11-15|120|3|
+au-sa-adelaide|Adelaide and plains|7-25|345|0|wD
+au-sa-hills|Adelaide Hills|10-5|205|2|
+au-sa-barossa|Barossa, Clare and Fleurieu|10-10|202|2|
+au-sa-southeast|South-east (Mount Gambier)|10-24|193|2|
+au-sa-riverland|Riverland and Mallee|8-31|259|0|D
+au-sa-outback|Far north and outback (Oodnadatta, Coober Pedy)|8-5|308|0|X
+au-wa-perth|Perth and the Swan Coastal Plain|7-25|345|0|wD
+au-wa-southwest|South-west (Busselton, Margaret River, Albany)|9-9|288|1|w
+au-wa-wheatbelt|Wheatbelt (Northam, Goomalling, Merredin)|9-15|275|1|D
+au-wa-goldfields|Goldfields (Kalgoorlie)|8-19|305|0|X
+au-wa-north|Pilbara and Kimberley|1-1|365|0|wX
+au-nt-top|Top End (Darwin, Katherine)|1-1|365|0|wX
+au-nt-centre|Alice Springs and central Australia|8-30|256|0|X
 za-highveld|Highveld: Johannesburg, Pretoria, Midrand|8-25|275|0|
 za-eastern|Eastern Highveld and Free State east (Ermelo, Bethlehem, Lydenburg)|10-5|200|0|
 za-freestate|Free State and North West (Bloemfontein, Kroonstad, Potchefstroom)|9-10|235|0|D
@@ -214,14 +258,18 @@ za-wc-coast|Western Cape coast and Cape Peninsula (Cape Town, Hermanus)|7-25|345
 za-wc-inland|Western Cape inland valleys (Paarl, Worcester, Oudtshoorn)|8-5|320|0|wD
 `;
 const HOT = { h: [7, 8], d: [6, 7, 8], x: [6, 7, 8, 9], H: [1, 2], D: [12, 1, 2], X: [11, 12, 1, 2, 3] };   // lower case: northern summers; upper case: southern summers
+const AU_STATE = { nsw: 'New South Wales', act: 'New South Wales', vic: 'Victoria', qld: 'Queensland', tas: 'Tasmania', sa: 'South Australia', wa: 'Western Australia', nt: 'Northern Territory' };
 const GROUP = { US: 'By state or region', CA: 'By province or territory', GB: 'By region', IE: 'By province', DE: 'By state', FR: 'By region', NL: 'By region', NZ: 'By region', ES: 'By region', ZA: 'By region' };
 /* returns { US: [[code, name, [m, d], days, {winter, hot, late, group}], ...], ... } */
 export const REGIONS = {};
 for (const line of T.trim().split('\n')) {
   const [code, name, md, free, late, flags] = line.split('|');
-  const cc = code.slice(0, 2).toUpperCase(), [m, d] = md.split('-').map(Number), o = { group: GROUP[cc] };
+  const cc = code.slice(0, 2).toUpperCase(), [m, d] = md.split('-').map(Number), o = { group: cc === 'AU' ? AU_STATE[code.split('-')[1]] : GROUP[cc] };
   if (+late) o.late = +late;
   if (flags.includes('w')) o.winter = 1;
   for (const k of Object.keys(HOT)) if (flags.includes(k)) o.hot = HOT[k];
+  if (cc === 'AU') {   // southern summer crops: planting stops by the end of January; winter sowing of cool crops where winters are mild (255+ frost-free days); autumn jobs (garlic, broad beans, autumn sowings) are counted from the end of May at the latest, because the first frost comes in July or never; slow-spring wait is at most one week
+    o.cap = [1, 31]; o.fcap = [5, 31]; if (+free >= 255) o.winter = 1; if (o.late) o.late = Math.round(o.late / 3);
+  }
   (REGIONS[cc] = REGIONS[cc] || []).push([code, name, [m, d], +free, o]);
 }

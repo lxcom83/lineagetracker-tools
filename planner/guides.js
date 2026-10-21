@@ -9,6 +9,7 @@
    temperate (Sydney, Perth, Adelaide), cool (Melbourne, Canberra, Hobart, the tablelands), arid (inland). */
 import { frostPack, ZONES, NAMES } from './frost.js';
 import { IN_PACK, PH_PACK } from './seasons.js';
+import { REGIONS } from './frost-regions.js';
 const R = (a, b) => { const out = []; for (let m = a; ; m = (m % 12) + 1) { out.push(m); if (m === b) break; } return out; };
 const ALL = R(1, 12);
 export const GUIDES = {
@@ -52,9 +53,20 @@ export const GUIDES = {
    and there is no default: with no location set, the guide features are not available.  Today the only pack is
    Australia (the sowing months above); others are added as data packs (see the research doc). */
 export const AU_ZONES = [['tropical', 'Tropical'], ['subtropical', 'Subtropical'], ['temperate', 'Temperate'], ['cool', 'Cool'], ['arid', 'Arid / inland']];
-export const PACKS = { AU: { name: 'Australia', zones: AU_ZONES, months: (crop, zone) => (GUIDES[crop] || GUIDES.other)[9][zone] || [] } };
+const auLegacy = (crop, zone) => (GUIDES[crop] || GUIDES.other)[9][zone] || [];
+export const PACKS = { AU: { name: 'Australia', zones: AU_ZONES, months: auLegacy } };
 /* the frost-based packs (frost.js): the months are worked out from each zone's typical last frost and frost-free days */
 for (const cc of Object.keys(ZONES)) PACKS[cc] = frostPack(NAMES[cc], ZONES[cc], crop => (GUIDES[crop] || GUIDES.other)[6]);
+/* Australia: 41 state and region rows worked out from frost dates, like the other countries. The tropical north has wet and dry
+   seasons instead of frost, so those three rows use the hand-written tropical guide. The five older whole-climate choices stay in the list
+   (less exact) so plans saved earlier keep working. */
+const AU_TROPICAL = new Set(['au-qld-north', 'au-wa-north', 'au-nt-top']);
+const auFrost = frostPack('Australia', REGIONS.AU.filter(z => !AU_TROPICAL.has(z[0])), crop => (GUIDES[crop] || GUIDES.other)[6]);
+PACKS.AU = {
+  name: 'Australia', frost: true,
+  zones: [...REGIONS.AU.map(([c, l, , , o]) => [c, l, (o && o.group) || '']), ...AU_ZONES.map(([c, l]) => [c, l, 'Whole-climate choices (less exact)'])],
+  months: (crop, zone) => (AU_TROPICAL.has(zone) ? auLegacy(crop, 'tropical') : AU_ZONES.some(z => z[0] === zone) ? auLegacy(crop, zone) : auFrost.months(crop, zone)),
+};
 /* the monsoon and rainy-season packs (seasons.js): the months are the member's own zone's sowing seasons for each crop */
 PACKS.IN = IN_PACK; PACKS.PH = PH_PACK;
 export const COUNTRIES = [['AU', 'Australia'], ['NZ', 'New Zealand'], ['GB', 'United Kingdom'], ['IE', 'Ireland'], ['US', 'United States'], ['CA', 'Canada'], ['ZA', 'South Africa'], ['DE', 'Germany'], ['FR', 'France'], ['ES', 'Spain'], ['NL', 'Netherlands'], ['IN', 'India'], ['PH', 'Philippines']];

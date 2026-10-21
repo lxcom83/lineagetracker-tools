@@ -2,6 +2,18 @@
 // spec -> one merged BufferGeometry (vertex colours). Same spec + seed = same plant.
 import * as THREE from './vendor/three.module.js';
 export const SPEC_VERSION = 2;
+// Quality levels: how much detail one plant gets. 'low' is the default and is what a tablet runs.
+// seg = tube sides, leaf = leaf grid rows/columns, fruit = fruit grid, dens = leaves per twig.
+// 'lod1' is the cheaper copy used for plants a little way from the camera (never chosen by the person).
+export const QUALITY_LEVELS = ['low','medium','high','ultra'];
+export const PROFILES = {
+  lod1:{seg:0.6,leaf:0.35,fruit:0.5,dens:0.4,big:1.7},
+  low:{seg:1,leaf:0.6,fruit:0.7,dens:0.7,big:1.2},
+  medium:{seg:1.25,leaf:1,fruit:1,dens:1},
+  high:{seg:2,leaf:1.6,fruit:1.5,dens:1.4},
+  ultra:{seg:3,leaf:2.4,fruit:2.2,dens:2}
+};
+const rnd=(x,min)=>Math.max(min,Math.round(x));
 
 function rng(seed){ let s = seed>>>0 || 1; return ()=>{ s^=s<<13; s>>>=0; s^=s>>>17; s^=s<<5; s>>>=0; return s/4294967296; }; }
 const V = (x,y,z)=>new THREE.Vector3(x,y,z);
@@ -22,11 +34,11 @@ const SHAPES = {
 };
 
 class Mesh {
-  constructor(){ this.p=[]; this.c=[]; this.i=[]; }
+  constructor(q){ this.p=[]; this.c=[]; this.i=[]; this.q=q||PROFILES.low; this.cure=0; }
   vert(v,c){ this.p.push(v.x,v.y,v.z); this.c.push(c[0],c[1],c[2]); return this.p.length/3-1; }
   tri(a,b,c){ this.i.push(a,b,c); }
   tube(pts, r0, r1, col, seg=5){
-    let prev=null;
+    seg=rnd(seg*this.q.seg,3); let prev=null;
     for(let k=0;k<pts.length;k++){
       const t=k/(pts.length-1), r=r0+(r1-r0)*t;
       const d = pts[Math.min(k+1,pts.length-1)].clone().sub(pts[Math.max(k-1,0)]).normalize();
@@ -42,7 +54,8 @@ class Mesh {
   leaf(pos, dir, size, col, o={}){
     const sh=SHAPES[o.shape||'ovate'], f=dir.clone().normalize(), {s,n}=frame(f);
     if(o.shape==='palmate') return this.palmate(pos,f,s,n,size,col,o);
-    const T=o.detail?10:4, S=o.detail?7:3, wide=o.wide||0.5, fold=o.fold===undefined?0.25:o.fold, droop=o.droop===undefined?0.25:o.droop, wave=o.wave||0, veins=o.veins||5;
+    const T=rnd((o.detail?10:4)*this.q.leaf,2),   // at least 2 steps: with 1 the blade has no width (both ends are points) and the leaf vanishes
+          S=rnd((o.detail?7:3)*this.q.leaf,1), wide=o.wide||0.5, fold=o.fold===undefined?0.25:o.fold, droop=o.droop===undefined?0.25:o.droop, wave=o.wave||0, veins=o.veins||5;
     const dark=mix(col,[0,0.05,0],0.35), light=mix(col,[1,1,0.75],0.38);
     const rows=[];
     for(let r=0;r<=T;r++){
@@ -71,7 +84,7 @@ class Mesh {
   }
   // round lobed leaf (pumpkin, squash, gourd): polar grid, 5 lobes, notched base
   palmate(pos,f,s,n,size,col,o){
-    const K=o.detail?30:12, Rn=o.detail?5:2, lobes=o.lobes||5, sinus=o.sinus===undefined?0.3:o.sinus, cup=o.fold===undefined?0.3:o.fold, droop=o.droop===undefined?0.15:o.droop;
+    const K=rnd((o.detail?30:12)*this.q.leaf,6), Rn=rnd((o.detail?5:2)*this.q.leaf,1), lobes=o.lobes||5, sinus=o.sinus===undefined?0.3:o.sinus, cup=o.fold===undefined?0.3:o.fold, droop=o.droop===undefined?0.15:o.droop;
     const centre=pos.clone().addScaledVector(f,size*0.5);
     const dark=mix(col,[0,0.05,0],0.4), light=mix(col,[1,1,0.7],0.4);
     const rings=[]; const cv=this.vert(centre.clone().addScaledVector(n,cup*size*0.0),mix(col,light,0.4));
@@ -92,17 +105,20 @@ class Mesh {
     const sh=fs.shape, sz=fs.size*(0.3+0.7*ripe);
     if(sh.kind==='head') return this.head(pos,fs,sz,R);
     const c1=hex(fs.colorUnripe||'#5f9a3a'), c2=hex(fs.colorRipe), c3=hex(fs.colorSecondary||fs.colorRipe);
-    const base=mix(c1,c2,Math.min(1,ripe*1.15)), W=sh.ribs>0||sh.kernels?28:20, H=16, rows=[];
+    let base=mix(c1,c2,Math.min(1,ripe*1.15)); if(this.cure&&fs.colorCured) base=mix(base,hex(fs.colorCured),this.cure);
+    const W0=sh.ribs>0||sh.kernels?28:20, W=Math.max(8,sh.ribs?Math.max(rnd(W0*this.q.fruit,8),sh.ribs*3):rnd(W0*this.q.fruit,8)), H=rnd(16*this.q.fruit,6), rows=[];
     const blushAng=R()*6.28, grooveShade=sh.grooveShade===undefined?0.3:sh.grooveShade;
     for(let y=0;y<=H;y++){ const v=y/H, th=v*Math.PI, row=[];
       for(let x=0;x<W;x++){ const ph=x/W*Math.PI*2;
-        const prof=Math.pow(Math.max(0,Math.sin(th)),sh.fullness||0.75);                // fullness: <1 boxy, >1 pointed
+        let prof=Math.pow(Math.max(0,Math.sin(th)),sh.fullness||0.75);                // fullness: <1 boxy, >1 pointed
+        if(sh.neck) prof=(sh.neck+(1-sh.neck)*sstep(0.42,0.75,v))*Math.pow(Math.max(0,Math.sin(th)),0.4);   // butternut: narrow neck, round bulb
         let rib=0; if(sh.ribs) rib=Math.cos(ph*sh.ribs);
         if(sh.kernels) rib=Math.cos(ph*sh.kernels)*Math.cos(th*10)*0.4;
         let rad=0.5*sh.width*prof*(1+sh.ribDepth*rib);
+        if(sh.warts) rad*=1+sh.warts*Math.max(0,Math.sin(ph*13+th*7)*Math.sin(ph*5-th*17))*Math.sin(th);   // bumpy skin
         rad*=1+(v<0.5?sh.taperTop*(v-0.5):sh.taperBottom*(0.5-v))*0.0;   // simple
         rad*=1-(v<0.5? sh.taperTop*(0.5-v) : sh.taperBottom*(v-0.5))*1.0;
-        let yy=(Math.cos(th)*0.5)*sh.height;
+        let yy=(sh.neck?(0.5-v):Math.cos(th)*0.5)*sh.height;
         // dimples where stem and flower end sit
         yy-= (v<0.2? 1:0)*sh.dimple*0.07*Math.exp(-v*v/0.004)*sh.height;
         yy+= (v>0.8? 1:0)*sh.dimple*0.05*Math.exp(-(1-v)*(1-v)/0.004)*sh.height;
@@ -142,17 +158,28 @@ export const PRESETS = {
   blackPumpkin:{v:2,kind:'vine',seed:9,length:5.5,stem:0.03,sideVines:4,leaf:{shape:'palmate',lobes:5,sinus:0.4,size:0.5,density:1,color:'#2f6a2a',color2:'#4b8a38',fold:0.3,droop:0.25},fruit:{count:4,size:0.3,shape:{width:1.0,height:1.12,fullness:0.7,ribs:7,ribDepth:0.07,grooveShade:0.5,taperTop:0.35,taperBottom:0.05,dimple:1.2,stem:0.55,stemThick:1.4,stemRidges:1,stemColor:'#5a4a2a',stripes:0},colorUnripe:'#3e6a35',colorRipe:'#1c1f24',colorSecondary:'#2a3a30'}},
   tomato:{v:2,kind:'bush',seed:3,height:1.6,stem:0.018,joints:12,leaf:{shape:'compound',leaflet:'oval',wide:0.7,size:0.34,density:2,color:'#4a8a30',color2:'#6aa845',fold:0.3,droop:0.3,wave:0.9},fruit:{count:10,size:0.085,shape:{width:1.05,height:0.88,fullness:0.65,ribs:5,ribDepth:0.04,grooveShade:0.15,taperTop:0,taperBottom:0.08,dimple:0.8,blush:0.25,calyx:6,stem:0.5,stemThick:0.6,stemColor:'#4a6a2a'},colorUnripe:'#6aa83c',colorRipe:'#d6281d',colorSecondary:'#e8602a'}},
   corn:{v:2,kind:'stalk',seed:2,height:2.2,stem:0.035,joints:9,leaf:{shape:'strap',wide:0.14,size:1.0,density:1,color:'#5c9a38',color2:'#7ab648',fold:0.6,droop:0.7,wave:1.0,veins:12},fruit:{count:2,size:0.3,shape:{width:0.34,height:1.5,fullness:0.55,kernels:18,ribDepth:0.06,taperTop:0.75,taperBottom:0.1,dimple:0,husk:5,stem:0.1},colorUnripe:'#c8d878',colorRipe:'#f0c820',colorSecondary:'#f0c820'}},
-  sunflower:{v:2,kind:'stalk',seed:4,height:2.4,stem:0.04,joints:11,leaf:{shape:'heart',wide:0.85,size:0.55,density:1,color:'#4b8a33',color2:'#6aa840',fold:0.25,droop:0.45,wave:0.5},fruit:{count:1,size:0.5,shape:{kind:'head',petals:22,width:1,height:0.1},colorUnripe:'#5a8a3a',colorRipe:'#f0b81a',colorSecondary:'#4a2a12'}}
+  sunflower:{v:2,kind:'stalk',seed:4,height:2.4,stem:0.04,joints:11,leaf:{shape:'heart',wide:0.85,size:0.55,density:1,color:'#4b8a33',color2:'#6aa840',fold:0.25,droop:0.45,wave:0.5},fruit:{count:1,size:0.5,shape:{kind:'head',petals:22,width:1,height:0.1},colorUnripe:'#5a8a3a',colorRipe:'#f0b81a',colorSecondary:'#4a2a12'}},
+  // Reference notes (shape, colour, habit cross-checked against several published descriptions; reference only, nothing copied):
+  // citrus: round dense crown, glossy dark-green 5-10 cm leaves, round orange fruit; mature trees 3.5-9 m high and wide, kept near 4 m in orchards
+  citrus:{v:2,kind:'tree',seed:31,height:4,spread:4.2,trunkFrac:0.26,trunk:0.13,levels:4,kids:[0,5,4,3],angle:58,lenRatio:0.66,taper:0.62,twist:0.4,tropism:0.12,droop:0.05,leaf:{shape:'oval',wide:0.5,size:0.14,density:9,color:'#2f6a2c',color2:'#4a8a38',fold:0.3,droop:0.25,wave:0.2},fruit:{count:16,size:0.08,shape:{width:1,height:0.94,fullness:0.8,ribs:0,ribDepth:0,taperTop:0,taperBottom:0,dimple:0.5,stem:0.12,stemThick:0.5,calyx:5,warts:0.03},colorUnripe:'#6aa83c',colorRipe:'#f08a16',colorSecondary:'#f08a16'}},
+  // Black Futsu: squat blocky heavy ribs, bumpy skin, near-black green that cures to tawny orange-brown, 1.4-2.3 kg, compact vine
+  blackFutsu:{v:2,kind:'vine',seed:13,length:4,stem:0.028,sideVines:3,leaf:{shape:'palmate',lobes:5,sinus:0.36,size:0.48,density:1,color:'#2f6a2a',color2:'#4b8a38',fold:0.3,droop:0.25},fruit:{count:4,size:0.21,shape:{width:1,height:0.72,fullness:0.5,ribs:10,ribDepth:0.1,grooveShade:0.6,warts:0.07,taperTop:0,taperBottom:0,dimple:1.4,stem:0.4,stemThick:1.5,stemRidges:1,stemColor:'#5a4a2a',stripes:0},colorUnripe:'#3e6a35',colorRipe:'#1f2b22',colorSecondary:'#2a3a30',colorCured:'#b58a52'}},
+  // South Anna butternut: butternut shape (narrow neck, round bulb), green turning tan, strong vine
+  southAnna:{v:2,kind:'vine',seed:17,length:5,stem:0.03,sideVines:4,leaf:{shape:'palmate',lobes:5,sinus:0.2,size:0.5,density:1,color:'#3a7a2d',color2:'#5a9a3a',fold:0.3,droop:0.2},fruit:{count:3,size:0.3,shape:{width:0.5,height:1,neck:0.62,fullness:0.7,ribs:0,ribDepth:0,taperTop:0,taperBottom:0,dimple:0.4,stem:0.3,stemThick:1.4,stemRidges:1,stemColor:'#7a6a3a',stripes:0},colorUnripe:'#6f9a47',colorRipe:'#d2a870',colorSecondary:'#d2a870'}},
+  // Golden scallop pattypan: flat scalloped disc, bush habit, big long-stalked leaves
+  pattypan:{v:2,kind:'rosette',seed:19,height:0.7,spread:1.3,leaves:9,stem:0.016,leaf:{shape:'palmate',lobes:5,sinus:0.38,size:0.46,density:1,color:'#3f7d2f',color2:'#5d9a3a',fold:0.3,droop:0.25},fruit:{count:5,size:0.13,shape:{width:1,height:0.55,fullness:0.45,ribs:11,ribDepth:0.2,grooveShade:0.4,taperTop:0,taperBottom:0.45,dimple:0.8,stem:0.3,stemThick:1.2,stemColor:'#6a8a3a',stripes:0},colorUnripe:'#bfd86a',colorRipe:'#f0b81a',colorSecondary:'#f0b81a'}}
 };
 
 export function generate(spec, stage=1, opts={}){
-  const R=rng(spec.seed||1), M=new Mesh(), st=Math.max(0.05,Math.min(1,stage));
+  const Q=PROFILES[opts.level]||PROFILES.low, R=rng(spec.seed||1), M=new Mesh(Q), st=Math.max(0.05,Math.min(1,stage));
   const L0=spec.leaf, lc=hex(L0.color), lc2=hex(L0.color2), bark=hex(spec.bark||'#6b4a2b'), green=hex('#4a7a35');
-  const leafQ = opts.quality===undefined?1:opts.quality;
+  M.cure=opts.cure||0;
+  const leafQ = Q.dens*(opts.quality===undefined?1:opts.quality);
   const hero = spec.kind!=='tree';
   const lo={shape:L0.shape,wide:L0.wide,fold:L0.fold,droop:L0.droop,wave:L0.wave,veins:L0.veins,lobes:L0.lobes,sinus:L0.sinus,detail:hero?1:0};
   const col=()=>mix(lc,lc2,R());
-  const place=(pos,dir,size,extra)=>{
+  const big=Q.big||1;   // fewer leaves at low detail: make each one a little bigger so the crown does not look bare
+  const place=(pos,dir,size0,extra)=>{ const size=size0*big;
     if(L0.shape==='compound'){        // pinnate leaf: rachis + leaflet pairs
       const f=dir.clone().normalize(), {s,n}=frame(f), pts=[pos.clone(),pos.clone().addScaledVector(f,size*0.5).addScaledVector(n,-size*0.08),pos.clone().addScaledVector(f,size).addScaledVector(n,-size*0.3)];
       M.tube(pts,0.004,0.002,green,3);
@@ -189,7 +216,7 @@ export function generate(spec, stage=1, opts={}){
       }
       if(lvl>0){ const cnt=Math.round(L0.density*0.5*leafQ); for(let j=0;j<cnt;j++){ place(pts[pts.length-1],V(R()-0.5,R()*0.5,R()-0.5).normalize(),L0.size*0.8*st);} }
     };
-    branch(V(0,0,0),V(0,1,0),H*0.55,tw,0);
+    branch(V(0,0,0),V(0,1,0),H*(spec.trunkFrac||0.55),tw,0);
   } else if(spec.kind==='vine'){
     const Lv=spec.length*(0.1+0.9*st);
     const run=(p,dir,len,r)=>{
@@ -207,6 +234,13 @@ export function generate(spec, stage=1, opts={}){
     const main=run(V(0,0.03,0),V(1,0,0.2),Lv,spec.stem);
     for(let s=0;s<spec.sideVines;s++){ const q=main[Math.floor((s+1)/(spec.sideVines+1)*main.length)]; const side=s%2?1:-1; run(q,V(0.2,0,side).normalize(),Lv*0.45,spec.stem*0.7); }
     for(let f=0;f<fruitSpec.count;f++) fruitAt.push(main[Math.min(main.length-1,Math.floor((0.25+0.2*f)*main.length))].clone().add(V((R()-0.5)*0.3,0,(R()-0.5)*0.5)).setY(0));
+  } else if(spec.kind==='rosette'){      // bush squash: a ring of big long-stalked leaves, fruit on the ground between
+    const H=spec.height*(0.2+0.8*st), nl=spec.leaves||9;
+    for(let k=0;k<nl;k++){ const az=k*2.4+R()*0.3, up=0.45+0.55*(k/nl), reach=spec.spread*0.5*(0.35+0.65*st)*(0.6+0.4*(1-k/nl)), dir=V(Math.cos(az),0,Math.sin(az));
+      const top=V(dir.x*reach*0.55,H*up,dir.z*reach*0.55);
+      M.tube([V(dir.x*0.02,0,dir.z*0.02),V(dir.x*reach*0.15,H*up*0.55,dir.z*reach*0.15),top],spec.stem,spec.stem*0.7,green,5);
+      M.leaf(top,V(dir.x,0.12,dir.z),L0.size*(0.35+0.65*st),col(),{...lo,detail:1}); }
+    for(let f=0;f<fruitSpec.count;f++){ const a=f/Math.max(1,fruitSpec.count)*6.283+0.6, r=0.12+0.1*(f%2); fruitAt.push(V(Math.cos(a)*r,0,Math.sin(a)*r)); }
   } else {
     const H=spec.height*(0.1+0.9*st), n=spec.joints, pts=[]; let cur=V(0,0,0);
     for(let k=0;k<=n;k++){ cur=V((R()-0.5)*0.03*k, H*k/n, (R()-0.5)*0.03*k); pts.push(cur.clone()); }
@@ -228,4 +262,53 @@ export function generate(spec, stage=1, opts={}){
 }
 export function stats(g){ return {tris:g.index.count/3, verts:g.attributes.position.count}; }
 // one fruit on its own at full ripeness (for the close-up row)
-export function fruitGeometry(spec, ripe=1){ const M=new Mesh(), R=rng((spec.seed||1)+99); M.fruit(V(0,0,0),spec.fruit,ripe,R); return M.geometry(); }
+export function fruitGeometry(spec, ripe=1, level='low'){ const M=new Mesh(PROFILES[level]||PROFILES.low), R=rng((spec.seed||1)+99); M.fruit(V(0,0,0),spec.fruit,ripe,R); return M.geometry(); }
+
+// Rough size of a grown plant: height h and canopy radius r in metres (used to pick how much detail to draw).
+export function extent(spec, stage=1){
+  const st=Math.max(0.05,Math.min(1,stage));
+  if(spec.kind==='tree'){ const h=spec.height*(0.15+0.85*st); return {h, r:(spec.spread||spec.height*0.9)*0.5*(0.2+0.8*st)}; }
+  if(spec.kind==='vine'){ return {h:0.5, r:spec.length*(0.1+0.9*st)*0.55}; }
+  if(spec.kind==='rosette'){ return {h:spec.height*(0.2+0.8*st), r:spec.spread*0.5*(0.35+0.65*st)}; }
+  const h=spec.height*(0.1+0.9*st); return {h, r:Math.max(0.25,h*(spec.kind==='stalk'?0.18:0.3))};
+}
+// Very cheap stand-in for far-away plants: a trunk and one blob (tree), a low mound (vine, rosette) or a leafy blob (bush, stalk).
+// Under 60 triangles. Same colours as the real plant so a field does not change colour as you zoom.
+export function proxyGeometry(spec, stage=1){
+  const M=new Mesh(PROFILES.lod1), e=extent(spec,stage), lc=mix(hex(spec.leaf.color),hex(spec.leaf.color2),0.5), bark=hex(spec.bark||'#6b4a2b');
+  const blob=(cy,ry,rx)=>{ const S=7,T=4,rows=[]; const top=M.vert(V(0,cy+ry,0),mix(lc,[1,1,0.7],0.2));
+    for(let t=1;t<=T;t++){ const a=t/T*Math.PI*0.95, row=[]; for(let s=0;s<S;s++){ const b=s/S*Math.PI*2; row.push(M.vert(V(Math.cos(b)*Math.sin(a)*rx,cy+Math.cos(a)*ry,Math.sin(b)*Math.sin(a)*rx),mix(lc,[0.05,0.15,0.05],t/T*0.45))); } rows.push(row); }
+    for(let s=0;s<S;s++) M.tri(top,rows[0][(s+1)%S],rows[0][s]);
+    for(let t=0;t<T-1;t++) for(let s=0;s<S;s++){ const n=(s+1)%S; M.tri(rows[t][s],rows[t][n],rows[t+1][s]); M.tri(rows[t][n],rows[t+1][n],rows[t+1][s]); } };
+  if(spec.kind==='tree'){ const th=e.h*(spec.trunkFrac||0.4); M.tube([V(0,0,0),V(0,th,0)],spec.trunk*(0.2+0.8*Math.max(0.05,stage)),spec.trunk*0.5*(0.2+0.8*Math.max(0.05,stage)),bark,4); blob(th+(e.h-th)*0.5,(e.h-th)*0.55,e.r); }
+  else if(spec.kind==='vine'||spec.kind==='rosette') blob(e.h*0.35,e.h*0.5,e.r);
+  else blob(e.h*0.5,e.h*0.5,e.r);
+  return M.geometry();
+}
+
+// ---- save / load a plant recipe (a spec) as plain JSON text ----
+const KINDS=['tree','vine','bush','stalk','rosette'];
+const num=(v,lo,hi,d)=>{ v=+v; return Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):d; };
+export function specToJSON(spec){ return JSON.stringify({format:'lt-plant',version:SPEC_VERSION,spec},null,1); }
+// Throws Error with a plain sentence if the text is not a plant recipe. Numbers are kept inside sensible limits.
+export function specFromJSON(text){
+  let o; try{ o=JSON.parse(text); }catch(e){ throw new Error('This is not a plant file.'); }
+  if(!o||o.format!=='lt-plant'||!o.spec) throw new Error('This is not a plant file.');
+  if(+o.version>SPEC_VERSION) throw new Error('This plant was saved by a newer version of the planner. Update the page and try again.');
+  const s=o.spec; if(!KINDS.includes(s.kind)) throw new Error('Unknown plant type: '+String(s.kind).slice(0,30));
+  if(!s.leaf||typeof s.leaf!=='object') throw new Error('The plant has no leaf description.');
+  const c=JSON.parse(JSON.stringify(s));
+  c.v=SPEC_VERSION; c.seed=num(c.seed,1,2147483647,1)|0;
+  if(c.height!==undefined) c.height=num(c.height,0.05,40,2);
+  if(c.length!==undefined) c.length=num(c.length,0.2,30,4);
+  if(c.spread!==undefined) c.spread=num(c.spread,0.1,40,2);
+  if(c.trunk!==undefined) c.trunk=num(c.trunk,0.005,2,0.1);
+  if(c.levels!==undefined) c.levels=num(c.levels,1,5,4)|0;
+  if(c.kind==='tree'){ if(!Array.isArray(c.kids)) c.kids=[0,4,4,3]; c.kids=c.kids.slice(0,6).map(k=>num(k,0,6,3)|0); }
+  c.leaf.size=num(c.leaf.size,0.01,3,0.3); c.leaf.density=num(c.leaf.density,1,20,4);
+  if(c.fruit&&c.fruit.count){ c.fruit.count=num(c.fruit.count,0,60,0)|0; c.fruit.size=num(c.fruit.size,0.01,1.5,0.1); if(!c.fruit.shape) c.fruit.shape={width:1,height:1}; }
+  else c.fruit={count:0};
+  // a plant has to build without error before we accept it
+  try{ generate(c,1); }catch(e){ throw new Error('The plant could not be built from this file.'); }
+  return c;
+}

@@ -7,7 +7,7 @@
      cool crops     go in weeks before the last frost, and again in late summer so they finish before hard frost;
      garlic, broad beans, fruit trees and berries follow their own rules.
    Where winters are mild ("winter": true) cool crops can also be sown through winter.  "hot" lists months too hot for
-   crops that dislike heat; "late" is extra weeks tender crops wait after the last frost (cool, slow-warming springs, such as the
+   crops that dislike heat; "cap" is the latest date tender crops are planted (Australia: end of January); "fcap" is the latest date counted as the first autumn frost (Australia: end of May); "late" is extra weeks tender crops wait after the last frost (cool, slow-warming springs, such as the
    British Isles and the New Zealand coast, where soil stays cold after the frosts end).  This is a general guide: local conditions vary, and the planner says "check your local guide".
    Sources used to set the rules and to check the results: Farmers' Almanac seed-starting chart (weeks from last frost),
    Ontario government climate zones and planting dates, Sonairte (Ireland) year-round sowing guide, RHS sowing advice,
@@ -40,7 +40,9 @@ const RULES = {
 
 /* windows are [from, to] in days; the first autumn frost is last frost + frost-free days, so they can run past December */
 function windows(crop, days, z) {
-  const s0 = doy(z.lsf[0], z.lsf[1]), F = s0 + z.free, r = RULES[crop] || RULES.other, out = [];
+  const s0 = doy(z.lsf[0], z.lsf[1]), r = RULES[crop] || RULES.other, out = [];
+  let F = s0 + z.free;
+  if (z.fcap) { let c = doy(z.fcap[0], z.fcap[1]); if (c < s0) c += 365; F = Math.min(F, c); }   // autumn work is not pushed past this date where frosts come late or never
   if (crop === 'garlic') {
     out.push([F - 3 * W, F + 3 * W]); if (z.winter) out.push([s0 - 8 * W, s0 - 2 * W]);
   } else if (crop === 'broadbean') {
@@ -50,7 +52,9 @@ function windows(crop, days, z) {
   } else if (crop === 'berry' || crop === 'fruittree') {
     out.push([F, s0 - W + 365]);   // dormant season: from the first frost to just before the last
   } else if (r.k === 'T') {
-    const a = s0 + (r.a + (z.late || 0)) * W, b = Math.max(F - days - r.buf, a + 2 * W);
+    const a = s0 + (r.a + (z.late || 0)) * W;
+    let b = Math.max(F - days - r.buf, a + 2 * W);
+    if (z.cap) { let c = doy(z.cap[0], z.cap[1]); if (c < s0) c += 365; b = Math.max(Math.min(b, c), a + 1); }   // latest planting date (e.g. end of January in the southern hemisphere)
     out.push([a, b]);
   } else {
     out.push([s0 - r.s * W, s0 + r.e * W]);

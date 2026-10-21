@@ -5,6 +5,7 @@
      format: 'lt-planner-plan', version: 1, name,
      site:  { w, h, north (degrees: where north points, 0 = up, 90 = right), lat, lon, grid (snap step in m), country (ISO code, '' = not set), zone (climate zone in that country, '' = not set) }
             The planting guide is only used when both are set: there is no default location.
+            ground (optional): { cell, nx, ny, base, data } ground heights (terrain.js packGrid); junk is dropped, the site is then flat.
      date:  'YYYY-MM-DD'   the day the timeline is showing
      items: [ item ]       the plan, front of the drawing last
      blocks: { id: { name, items: [ item ] } }   block definitions; their items use the block's own coordinates
@@ -15,6 +16,9 @@
      plant:                   x, y, crop, shape, spread, height, sow, harvest (dates), link (app record id, optional),
                               after (id of the planting it follows in the same spot), remind (days before each event), save (saving seed from it)
      task:                    x, y, text, date, every ('', 'week', 'month', 'year'), remind   a job on the calendar (prune, feed, clean the tank)
+     rows:                    x, y (centre), w, h, rot  + crop, variety, rowSpacing, plantSpacing (m), sow, harvest, remind
+                              a whole block of crop rows kept as ONE item (a rule, not one object per plant): rows run along the width,
+                              spaced across the depth. A 20 acre field of corn is still a few numbers.
      note:                    x, y, text
      block:                   def (block id), x, y, rot   one placed copy of a block
    Beds, benches, areas, tanks and block copies can carry place: the id of a Place in the app.  Linked items take the
@@ -22,6 +26,7 @@
    hidden = out of view while you work;  locked = cannot be moved;  off = kept in the plan but left out (also of the app hand-over). */
 
 import { GUIDES, PACKS, ISOLATION } from './guides.js';
+import { unpackGrid } from './terrain.js';
 export const FORMAT = 'lt-planner-plan', VERSION = 1, EXT = '.ltplan';
 export const FOLDERS = [
   ['ground', 'Ground'], ['models', 'Buildings and models'], ['structures', 'Structures'], ['beds', 'Beds and areas'],
@@ -37,6 +42,7 @@ export const KINDS = {
   plant: { name: 'Plant', folder: 'planting', point: true }, note: { name: 'Note', folder: 'ground', point: true },
   task: { name: 'Job', folder: 'ground', point: true },
   block: { name: 'Block', folder: 'beds', point: true },
+  rows: { name: 'Crop rows', folder: 'planting', box: true },
 };
 /* Crops come from the planting guides (guides.js): [name, shape, spread (m, full size), height (m), days to harvest]. */
 export const CROPS = Object.fromEntries(Object.entries(GUIDES).map(([k, g]) => [k, [g[0], g[2], g[2] === 'vine' ? g[4] : g[3], g[5], g[6]]]));
@@ -62,6 +68,11 @@ function cleanItem(it, ids, defs) {
     if (it.kind === 'bed') o.raised = r3(num(it.raised, 0.3, 0, 3));
     if (it.kind === 'area') o.fill = /^#[0-9a-fA-F]{6}$/.test(it.fill) ? it.fill : '#C9DDB8';
     const place = str(it.place, 40).replace(/[^A-Za-z0-9_-]/g, ''); if (place) o.place = place;
+    if (it.kind === 'rows') {
+      const crop = CROPS[it.crop] ? it.crop : 'other', g = GUIDES[crop] || GUIDES.other;
+      Object.assign(o, { crop, variety: str(it.variety, 60), rowSpacing: r3(num(it.rowSpacing, g[4] || 0.75, 0.05, 50)), plantSpacing: r3(num(it.plantSpacing, g[3] || 0.3, 0.02, 50)), sow: day(it.sow), harvest: day(it.harvest) });
+      o.remind = Number.isInteger(+it.remind) ? Math.min(60, Math.max(0, +it.remind)) : 3;
+    }
   } else if (k.line) {
     const pts = (Array.isArray(it.pts) ? it.pts : []).slice(0, 500).filter(p => Array.isArray(p)).map(p => [r3(num(p[0], 0)), r3(num(p[1], 0))]);
     if (pts.length < 2) return null;
@@ -96,6 +107,7 @@ export function cleanPlan(p) {
   // the zone only counts inside a country that has a guide; no location = no guide (there is no default)
   if (out.site.country && PACKS[out.site.country] && PACKS[out.site.country].zones.some(z => z[0] === s.zone)) out.site.zone = s.zone;
   else if (out.site.country && !PACKS[out.site.country] && typeof s.zone === 'string') out.site.zone = s.zone.replace(/[^a-z0-9-]/g, '').slice(0, 24);
+  { const g = s.ground && unpackGrid(s.ground); if (g) out.site.ground = { cell: r3(+s.ground.cell), nx: g.nx, ny: g.ny, base: +s.ground.base, data: s.ground.data }; }
   const rawDefs = p.blocks && typeof p.blocks === 'object' ? p.blocks : {};
   const defIds = new Set(Object.keys(rawDefs).filter(k => /^[A-Za-z0-9_-]{1,24}$/.test(k)).slice(0, 300));
   const ids = new Set();
@@ -217,6 +229,33 @@ export function growth(it, date) {
   return 0.15 + 0.85 * f * f * (3 - 2 * f);
 }
 
+/* ---------- crop rows: a rule that stands for many plants ---------- */
+const MAX_ROW_PLANTS = 2000000;   // beyond this the spacing is widened, so a typing slip cannot freeze a tablet
+/* rows run along the width and are spaced across the depth; one plant sits on each crossing */
+export function rowsLayout(it) {
+  let rs = it.rowSpacing, ps = it.plantSpacing, rows = Math.floor(it.h / rs + 1e-9) + 1, cols = Math.floor(it.w / ps + 1e-9) + 1;
+  while (rows * cols > MAX_ROW_PLANTS) { rs *= 1.25; ps *= 1.25; rows = Math.floor(it.h / rs + 1e-9) + 1; cols = Math.floor(it.w / ps + 1e-9) + 1; }
+  return { rows, cols, rowSpacing: rs, plantSpacing: ps, count: rows * cols };
+}
+/* which generated plant stands in for each crop until it has its own (by growing shape) */
+const PRESET_FOR = { tomato: 'tomato', corn: 'corn', pumpkin: 'pumpkinVine', squash: 'pattypan', melon: 'pumpkinVine', cucumber: 'pumpkinVine', fruittree: 'citrus', sunflower: 'sunflower' };
+const PRESET_BY_SHAPE = { upright: 'tomato', bush: 'tomato', vine: 'pumpkinVine', tree: 'appleTree', root: 'tomato', grass: 'corn' };
+export const presetFor = crop => PRESET_FOR[crop] || PRESET_BY_SHAPE[(CROPS[crop] || CROPS.other)[1]] || 'tomato';
+const hashId = s => { let h = 7; for (const c of String(s)) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0; return Math.abs(h) || 1; };
+/* The rows of the plan as rules for the 3D field drawer (plants/field.js), in plan metres: x across, y becomes the ground's z.
+   Rows that are not sown yet on `date`, or already harvested, are left out. `stage` is how far grown they are (0.15 to 1). */
+export function fieldRules(plan, date) {
+  const out = [], d = date || plan.date;
+  const walk = items => items.forEach(it => { if (it.off || it.hidden) return; if (it.kind === 'block') walk(blockItemsAll(plan, it)); else if (it.kind === 'rows') {
+    const g = growth(it, d); if (g === null) return;
+    const L = rowsLayout(it), a = rad(it.rot || 0), cx = -it.w / 2, cy = -it.h / 2;
+    out.push({ id: it.id, species: presetFor(it.crop), crop: it.crop, stage: r3(g), x: r3(it.x + cx * Math.cos(a) - cy * Math.sin(a)), z: r3(it.y + cx * Math.sin(a) + cy * Math.cos(a)), angle: r3(it.rot || 0),
+      rows: L.rows, cols: L.cols, rowSpacing: r3(L.rowSpacing), plantSpacing: r3(L.plantSpacing), jitter: r3(Math.min(0.1, L.plantSpacing * 0.1)), seed: hashId(it.id) });
+  } });
+  walk(plan.items);
+  return out;
+}
+
 /* ---------- the sun (worked out on the device, NOAA's simple formulas) ---------- */
 /* Returns azimuth (degrees clockwise from true north) and elevation (degrees) for a date, local solar hour and place. */
 export function sunAt(dateISO, hour, lat) {
@@ -246,7 +285,7 @@ export function forApp(plan) {
     // counts as one Place (e.g. "Tomato bed 2") holding everything inside it.
     beds: all.filter(it => it.kind === 'bed' || it.kind === 'bench').map(it => ({ planId: it.id, name: it.name, kind: it.kind, w: it.w, h: it.h, x: it.x, y: it.y, place: it.place || '' }))
       .concat(linkedBlocks.map(b => { const bb = bounds(b, plan); return { planId: b.id, name: b.name, kind: 'block', w: r3(bb[2] - bb[0]), h: r3(bb[3] - bb[1]), x: r3((bb[0] + bb[2]) / 2), y: r3((bb[1] + bb[3]) / 2), place: b.place }; })),
-    sowings: all.filter(it => it.kind === 'plant' && it.sow).map(it => ({ planId: it.id, crop: CROPS[it.crop][0], variety: it.variety || '', sow: it.sow, harvest: it.harvest || '', link: it.link || '', bed: bedUnder(all, it), after: it.after || '', saveSeed: !!it.save })),
+    sowings: all.filter(it => (it.kind === 'plant' || it.kind === 'rows') && it.sow).map(it => ({ planId: it.id, crop: CROPS[it.crop][0], variety: it.variety || '', sow: it.sow, harvest: it.harvest || '', link: it.link || '', bed: bedUnder(all, it), after: it.after || '', saveSeed: !!it.save })),
     // dated events for the app's calendar and reminders (the app asks before adding them)
     reminders: events(plan).map(e => ({ planId: e.id, date: e.date, kind: e.kind, title: e.title, remindDaysBefore: e.remind || 0, every: e.every || '' })),
   };
@@ -275,7 +314,7 @@ export function events(plan, from) {
   const out = [], all = [];
   const walk = items => items.forEach(it => { if (it.off) return; if (it.kind === 'block') walk(blockItemsAll(plan, it)); else all.push(it); });
   walk(plan.items);
-  const plants = all.filter(it => it.kind === 'plant'), nextOf = id => plants.find(p => p.after === id);
+  const plants = all.filter(it => it.kind === 'plant' || it.kind === 'rows'), nextOf = id => plants.find(p => p.after === id);
   for (const p of plants) {
     const label = CROPS[p.crop][0] + (p.variety ? ' (' + p.variety + ')' : '');
     const prev = p.after && plants.find(q => q.id === p.after);
