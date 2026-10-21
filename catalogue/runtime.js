@@ -186,5 +186,7 @@
     if (d.showModal) d.showModal(); else d.setAttribute('open', '');
   }
   if (O.order === 'none') obar.remove();
+  /* the Report link carries this page's own address (when it is on the web), so we know which page is meant */
+  try { var rp = document.getElementById('ltreport'); if (rp && /^https?:$/.test(location.protocol)) rp.href += '&page=' + encodeURIComponent((location.origin + location.pathname).slice(0, 300)); } catch (e) { /* ignore */ }
   draw(); bar();
 })();

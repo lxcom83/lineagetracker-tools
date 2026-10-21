@@ -145,3 +145,20 @@ details.nudge summary{cursor:pointer;font-weight:700;font-size:.92rem;min-height
 .eat-list{display:grid;gap:10px;margin:8px 0 12px}
 .eat-row textarea,.eat-row input{width:100%}
 .eat-shows{display:block;margin-top:2px}
+
+.stage-tips{background:var(--card);border-bottom:1px solid var(--line);padding:8px 12px;display:flex;gap:12px;align-items:flex-start;font-size:.88rem}
+.stage-tips[hidden]{display:none}
+.stage-tips ul{margin:0;padding-left:18px;flex:1}
+.stage-tips li{margin:2px 0}
+.stage-tips .btn{flex:none}
+@media (max-width:520px){.stage-tips{flex-direction:column;font-size:.84rem}}
+.kswitch .icon-btn.wide{width:auto;padding:0 10px;gap:6px;display:inline-flex;align-items:center}
+@media (max-width:520px){.kswitch .icon-btn.wide .hide-xs{display:none}}
+
+.libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:14px}
+.libcard{margin:0;display:flex;flex-direction:column;gap:6px}
+.libcard .libuse{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
+.libcard .libuse b{display:block;font-size:.95rem}
+.libcard .libuse small{color:var(--muted);display:block}
+.libcard .btn.sm{align-self:flex-start}
+@media (min-width:1000px){.stage-tips ul{columns:2;column-gap:28px}.stage-tips li{break-inside:avoid}}

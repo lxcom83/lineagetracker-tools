@@ -58,7 +58,7 @@ input[type=search],select,.fl input,.fl textarea{width:100%;min-height:42px;padd
 dialog{max-width:520px;width:calc(100% - 24px);border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--text);padding:20px}dialog::backdrop{background:rgba(0,0,0,.5)}
 dialog h2{margin:0 0 8px;color:var(--ink)}.ol{list-style:none;margin:0 0 8px;padding:0}.ol li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)}.tot{font-weight:700}
 .fl{display:block;margin:0 0 10px}.fl span{display:block;font-weight:700;font-size:.9rem;margin-bottom:3px}.hint{color:var(--muted);font-size:.9rem;margin:6px 0}.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-#terms{scroll-margin-top:70px}footer{border-top:1px solid var(--line);padding:18px 0 36px;color:var(--muted);font-size:.92rem}footer p{margin:0 0 6px;max-width:80ch}.flinks{font-weight:700}footer a{color:color-mix(in srgb,var(--accent) 55%,var(--text))}
+#terms{scroll-margin-top:70px}footer{border-top:1px solid var(--line);padding:18px 0 36px;color:var(--muted);font-size:.92rem}footer p{margin:0 0 6px;max-width:80ch}footer .ltnote{font-size:.85rem}.flinks{font-weight:700}footer a{color:color-mix(in srgb,var(--accent) 55%,var(--text))}
 @media print{#lt-tools,#lt-order,.step,#lt-links,#lt-chips{display:none}.hero{background:none!important;color:#000!important;border-bottom:3px solid #000}.card{box-shadow:none}#lt-grid{grid-template-columns:repeat(2,1fr);padding-bottom:0}.card{break-inside:avoid}}`;
 
 
@@ -114,7 +114,7 @@ export function buildPage(cat, brand, opts, inline) {
 <style>${CSS(a)}${LOOK_CSS}</style></head><body class="look-${o.look}">
 <div class="hero"><div class="wrap"><header id="lt-head"></header><nav id="lt-links" aria-label="Quick links"></nav></div></div>
 <div class="wrap"><div id="lt-tools"></div><main id="lt-grid" aria-label="Catalogue"></main>
-<footer id="terms">${terms.map(t => `<p>${esc(t)}</p>`).join('')}<p>${cat.updated ? 'Updated ' + esc(cat.updated) + '. ' : ''}Powered by <a href="https://lineagetracker.org" rel="noopener">Lineage Tracker</a>, free at lineagetracker.org.</p></footer></div>
+<footer id="terms">${terms.map(t => `<p>${esc(t)}</p>`).join('')}<p class="ltnote">This page was made by the seller with a free tool from Lineage Tracker. Lineage Tracker does not sell anything, hold stock or take payment, so questions about an order go to the seller. <a id="ltreport" href="https://lineagetracker.org/feedback.html?type=report" rel="noopener">Report this page</a></p><p>${cat.updated ? 'Updated ' + esc(cat.updated) + '. ' : ''}Powered by <a href="https://lineagetracker.org" rel="noopener">Lineage Tracker</a>, free at lineagetracker.org.</p></footer></div>
 <div id="lt-order" hidden></div><dialog id="lt-dlg"></dialog>
 <script type="application/json" id="lt-data">${safeJSON(data)}</script>
 ${inline ? `<script>${inline.replace(/<\/script/gi, '<\\/script')}</script>` : '<script src="runtime.js"></script>'}

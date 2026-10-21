@@ -188,7 +188,7 @@ const area = (val, on, ph, rows = 3) => { const t = el('textarea', { rows: Strin
 /* 1. the catalogue */
 function viewLoad(v) {
   const info = S.cat ? el('div', { class: 'notice' }, [el('b', { text: S.cat.list.name || 'Catalogue' }), ` · ${S.cat.items.length} items` + (S.cat.sender.name ? ` · from ${S.cat.sender.name}` : ''), el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Continue', onclick: () => go('brand') })])]) : null;
-  v.append(
+  v.append(...[
     el('p', { class: 'muted', text: 'In the Lineage Tracker app, open a list, press Share, then Catalogue file. Choose that file here. It stays on this device.' }),
     S.cat ? el('p', { class: 'small muted', text: 'Choosing a file here replaces the items in this catalogue. To keep this one and add another, use + New catalogue in the panel.' }) : null,
     info,
@@ -198,7 +198,7 @@ function viewLoad(v) {
         el('button', { type: 'button', class: 'btn primary', text: 'Choose a file', onclick: async () => { const f = await pickFile('.json,application/json'); if (!f) return; try { load(readCatalogue(await f.text())); } catch (e) { toast(e.message, 6000); } } }),
         el('button', { type: 'button', class: 'btn', text: 'Try Fluffy Lemon Seeds (an invented seller)', onclick: () => { if (!hasBrand(S.brand)) S.brand = setBrand(SAMPLE_BRAND).brand; load(readCatalogue(JSON.stringify(SAMPLE))); } }),
         el('button', { type: 'button', class: 'btn', text: 'Try Bramble Hill Homestead (invented goods seller)', onclick: () => { if (!hasBrand(S.brand)) S.brand = setBrand(SAMPLE_GOODS_BRAND).brand; load(readCatalogue(JSON.stringify(SAMPLE_GOODS))); } })])]),
-    el('p', { class: 'small muted', style: 'margin-top:14px', text: 'Only what is in the catalogue file is used: names, descriptions, pack sizes, prices, availability and the pictures you chose to share.' }));
+    el('p', { class: 'small muted', style: 'margin-top:14px', text: 'Only what is in the catalogue file is used: names, descriptions, pack sizes, prices, availability and the pictures you chose to share.' })].filter(x => x != null && x !== false));
 }
 
 /* Setup: the brand and the return address (the master choice lives on Stock & prices) */
@@ -211,7 +211,7 @@ function viewBrand(v) {
   const acc = el('input', { type: 'color', value: b.accent, 'aria-label': 'Accent colour' }); acc.addEventListener('input', () => { b.accent = acc.value; save(); });
   const ink = el('input', { type: 'color', value: b.ink, 'aria-label': 'Heading colour' }); ink.addEventListener('input', () => { b.ink = ink.value; save(); });
   logoImg = el('img', { src: b.logo || rootUrl('brand/logo-icon.svg'), alt: '' });
-  v.append(
+  v.append(...[
     el('p', { class: 'muted', text: 'Your brand is used on the page and the flyer, and LT-Print offers it as ready-made label pieces. It is kept on this device only.' }),
     el('div', { class: 'split' }, [
       el('div', {}, [(() => { const f = fold('catalogue', 'Logo, name and colours', true); f.body.append(
@@ -231,7 +231,7 @@ function viewBrand(v) {
     el('div', { class: 'actions' }, [
       el('button', { type: 'button', class: 'btn primary', text: 'Next: controls', onclick: () => go('controls') }),
       el('button', { type: 'button', class: 'btn', text: 'Save brand to a file', onclick: () => downloadText('my-brand.lt-brand.json', JSON.stringify({ app: 'lt-brand', v: 1, brand: S.brand })) }),
-      el('button', { type: 'button', class: 'btn', text: 'Open a brand file', onclick: async () => { const f = await pickFile('.json,application/json'); if (!f) return; try { const j = JSON.parse(await f.text()); if (j.app !== 'lt-brand') throw 0; S.brand = setBrand(j.brand).brand; go('brand'); toast('Brand loaded'); } catch { toast('That is not a brand file'); } } })]));
+      el('button', { type: 'button', class: 'btn', text: 'Open a brand file', onclick: async () => { const f = await pickFile('.json,application/json'); if (!f) return; try { const j = JSON.parse(await f.text()); if (j.app !== 'lt-brand') throw 0; S.brand = setBrand(j.brand).brand; go('brand'); toast('Brand loaded'); } catch { toast('That is not a brand file'); } } })])].filter(x => x != null && x !== false));
 }
 
 /* 3. the page */

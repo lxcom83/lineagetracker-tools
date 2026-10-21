@@ -258,7 +258,7 @@ export function viewOrders(v, c) {
     root.textContent = '';
     const all = S.orders, shown = shownOrders();
     const counts = k => k === 'all' ? all.length : all.filter(o => o.status === k).length;
-    root.append(
+    root.append(...[
       el('p', { class: 'muted', style: 'margin-top:0', text: 'Your private order book. Nothing here goes on your page. It is kept with this catalogue on this device, and saved in the backup file you keep in your own Drive or Dropbox.' }),
       el('div', { class: 'actions' }, [
         el('button', { type: 'button', class: 'btn primary', text: 'New order', onclick: () => { adding = { name: '', email: '', phone: '', street: '', suburb: '', state: '', postcode: '', country: '', note: '', lines: [], date: today(), status: STATUSES[0][0] }; pasting = false; draw(); } }),
@@ -282,7 +282,7 @@ export function viewOrders(v, c) {
         el('button', { type: 'button', class: 'btn sm', text: 'Print address labels', onclick: () => labels(shown) }),
         el('button', { type: 'button', class: 'btn sm', text: 'Print packing slips', onclick: () => slips(shown) })]) : null,
       statusEditor(),
-      shown.length ? el('div', { class: 'olist' }, shown.map(card)) : el('p', { class: 'muted', text: all.length ? 'No orders with that status.' : 'No orders yet. When an order email arrives, paste it in, or add the order by hand.' }));
+      shown.length ? el('div', { class: 'olist' }, shown.map(card)) : el('p', { class: 'muted', text: all.length ? 'No orders with that status.' : 'No orders yet. When an order email arrives, paste it in, or add the order by hand.' })].filter(x => x != null && x !== false));
   }
   v.append(root); draw();
 }

@@ -33,12 +33,29 @@ export function designView(ctx) {
     btn('zoomOut', 'Zoom out', () => setZoom(k / 1.25)), zoomV, btn('zoomIn', 'Zoom in', () => setZoom(k * 1.25)), btn('fit', 'Fit to screen', () => { S.zoomFit = true; fitZoom(); }), gridBtn,
   ]);
   preview.id = 'pv-sel';
+  /* how-to strip: shown until dismissed (remembered on this device), reopened with Tips */
+  const TIPKEY = 'ltprint.tipsHidden';
+  const tipGet = () => { try { return localStorage.getItem(TIPKEY) === '1'; } catch (e) { return false; } };
+  const tipSet = v => { try { v ? localStorage.setItem(TIPKEY, '1') : localStorage.removeItem(TIPKEY); } catch (e) { /* ignore */ } };
+  const tips = el('div', { class: 'stage-tips', role: 'note' }, [
+    el('ul', {}, [
+      el('li', {}, [el('b', { text: 'Move: ' }), 'tap or click an item to select it, then drag it. Arrow keys nudge it (Shift for bigger steps).']),
+      el('li', {}, [el('b', { text: 'Resize: ' }), 'drag the small squares on the corners and sides. Hold Alt to place freely instead of snapping.']),
+      el('li', {}, [el('b', { text: 'Several at once: ' }), 'drag across empty space (or hold Shift and tap each), then drag any one of them.']),
+      el('li', {}, [el('b', { text: 'Zoom and pan: ' }), 'pinch, or use the + and - above. On a touch screen, drag empty space to pan.']),
+      el('li', {}, [el('b', { text: 'Save: ' }), 'the Designs button at the top (folder icon). Save as lets you name each design and keep it on this device, Google Drive or Dropbox.']),
+    ]),
+    el('button', { type: 'button', class: 'btn sm', text: 'Got it', onclick: () => { tipSet(true); tips.hidden = true; tipBtn.setAttribute('aria-pressed', 'false'); } }),
+  ]);
+  const tipBtn = el('button', { type: 'button', class: 'btn sm', text: 'Tips', 'aria-pressed': 'false', title: 'How to move, resize and save', onclick: () => { const show = tips.hidden; tips.hidden = !show; tipSet(!show); tipBtn.setAttribute('aria-pressed', show ? 'true' : 'false'); } });
+  tips.hidden = tipGet(); tipBtn.setAttribute('aria-pressed', tips.hidden ? 'false' : 'true');
+  bar.insertBefore(tipBtn, bar.querySelector('.grow'));
   const canvas = el('div', { class: 'pr-canvas', tabindex: '0', 'aria-label': 'Label canvas. Arrow keys move the selection.' });
   const desk = el('div', { class: 'pr-desk' });
   const paper = el('div', { class: 'pr-paper' });
   const scale = el('div', { class: 'pr-scale' });
   const overlay = el('div', { class: 'pr-overlay' });
-  paper.append(scale, overlay); desk.append(paper); canvas.append(desk); stage.append(bar, canvas);
+  paper.append(scale, overlay); desk.append(paper); canvas.append(desk); stage.append(bar, tips, canvas);
 
   const W = () => S.t.w, H = () => S.t.h;
   function fitZoom() {

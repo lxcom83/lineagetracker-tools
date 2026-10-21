@@ -56,7 +56,7 @@ export function viewStock(v, c) {
   }
   const find = el('input', { type: 'search', placeholder: 'Find an item', 'aria-label': 'Find an item' }); find.addEventListener('input', () => { q = find.value.trim().toLowerCase(); rows(); });
   const onlyBox = el('input', { type: 'checkbox' }); onlyBox.addEventListener('change', () => { only = onlyBox.checked; rows(); });
-  root.append(
+  root.append(...[
     el('p', { class: 'muted', style: 'margin-top:0', text: 'Change what is in stock and what things cost. The page you download shows these numbers. Blank stock means the item is not counted.' }),
     el('label', { class: 'fld' }, [el('span', { text: 'Who is in charge of stock and prices' }), sel]), why,
     el('div', { class: 'actions' }, [find, el('label', { class: 'chk' }, [onlyBox, el('span', { text: 'Only items that differ from the app' })]),
@@ -69,6 +69,6 @@ export function viewStock(v, c) {
       toast('Update file saved. In the app, open the list and press Import changes from LT-Catalogue.', 7000);
     } }), el('span', { class: 'small muted', text: 'Makes a small file with only your changes. In the app, tick "I manage this list on the website" on the list, then import it.' })]),
     count,
-    el('div', { class: 'tbl-wrap' }, [el('table', { class: 'stocktbl' }, [el('thead', {}, [el('tr', {}, ['Item', 'Price', 'In stock', 'On page', ''].map(t => el('th', { scope: 'col', text: t })))]), tbody])]));
+    el('div', { class: 'tbl-wrap' }, [el('table', { class: 'stocktbl' }, [el('thead', {}, [el('tr', {}, ['Item', 'Price', 'In stock', 'On page', ''].map(t => el('th', { scope: 'col', text: t })))]), tbody])])].filter(x => x != null && x !== false));
   rows(); v.append(root);
 }

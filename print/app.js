@@ -6,6 +6,8 @@ import { history } from '../kit/history.js';
 import { storageFor, downloadText, pickFile, dropboxHandleRedirect, dropboxSignIn, dropboxConnected, dropboxForget } from '../kit/files.js';
 import { cleanTemplate, blankTemplate, sampleRow, KINDS, EXT, FORMAT, commonValues, numberText, usedFields, parseTable, MAX_ASSET } from './model.js';
 import { starter, starterList, addressStarter } from './starters.js';
+import { LIBRARY, LIBRARY_GROUPS, libraryDesign, exampleCSV, exampleRow } from './library.js';
+import { labelHTML, fitText } from './render.js';
 import { takeHandoff, hasBrand } from '../kit/brand.js';
 import { designView, setLogo, LABEL_CSS } from './editor.js';
 import { recordsView } from './records.js';
@@ -156,7 +158,8 @@ function build(g) {
   hist = history({ snap: snapOf, restore: s => { const o = JSON.parse(s); o.assets = Object.fromEntries(o.assets.filter(k => assetPool[k]).map(k => [k, assetPool[k]])); S.t = o; refreshAll(); design.selChanged(); autosave(); }, onChange: st => { if (undoB) { undoB.disabled = !st.canUndo; redoB.disabled = !st.canRedo; } } });
   const steps = el('div', { class: 'seg', role: 'group', 'aria-label': 'Steps' });
   [['design', 'Design'], ['records', 'Records'], ['print', 'Print']].forEach(([v, l], i) => steps.append(el('button', { type: 'button', 'data-step': v, onclick: () => go(v) }, [el('span', { class: 'num', text: String(i + 1) }), el('span', { class: 'lbl', text: l })])));
-  const fileBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Designs: new, open, save', title: 'Designs' }, [icon('folder')]);
+  const fileBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Designs: new, open, save', title: 'Designs' }, [icon('folder'), el('span', { class: 'hide-xs', text: 'Designs' })]);
+  fileBtn.classList.add('wide');
   const fileWrap = el('div', { class: 'kswitch' }, [fileBtn]);
   let menu = null;
   const closeMenu = () => { if (menu) { menu.remove(); menu = null; fileBtn.setAttribute('aria-expanded', 'false'); } };
@@ -166,6 +169,7 @@ function build(g) {
     const mi = (ic, label, sub, fn) => el('button', { type: 'button', role: 'menuitem', onclick: () => { closeMenu(); fn(); } }, [icon(ic), el('span', {}, [label, sub ? el('small', { text: sub }) : null])]);
     menu = el('div', { class: 'kmenu', role: 'menu', style: 'left:0;right:auto' }, [
       mi('plus', 'New design', 'Blank, or from a starter', newDialog),
+      mi('grid', 'Template library', 'Seed packets, ID tags, product labels, invoices', libraryDialog),
       mi('folder', 'Open…', 'From this device, Google Drive or Dropbox', () => openDialog()),
       mi('save', 'Save', S.file ? 'To ' + whereName(S.file.where) : 'Choose where', () => quickSave()),
       mi('save', 'Save as…', 'Another name or place', () => saveDialog()),
@@ -232,11 +236,46 @@ function newDialog() {
   const w = el('input', { type: 'number', min: '10', max: '600', step: '0.5', value: '60' }), h = el('input', { type: 'number', min: '5', max: '600', step: '0.5', value: '30' });
   body.push(el('h3', { text: 'Blank' }), el('div', { class: 'row' }, [el('label', { class: 'fld' }, [el('span', { text: 'Width (mm)' }), w]), el('label', { class: 'fld' }, [el('span', { text: 'Height (mm)' }), h]),
     el('button', { type: 'button', class: 'btn primary', style: 'margin-bottom:12px', text: 'Start blank', onclick: () => { const t = blankTemplate(Math.min(600, Math.max(10, +w.value || 60)), Math.min(600, Math.max(5, +h.value || 30)), kindSel.value); if (t.kind === 'table') t.columns = S.data?.columns || []; d.close(); setDoc(t, null); } })]));
+  body.push(el('button', { type: 'button', class: 'btn', style: 'margin-bottom:12px', text: 'Browse the template library (seed packets, invoices and more)…', onclick: () => { d.close(); libraryDialog(); } }));
   body.push(el('h3', { text: 'From a starter' }));
   const list = el('div', { class: 'flist' });
   const fill = () => { list.textContent = ''; for (const s of starterList(kindSel.value)) list.append(el('button', { type: 'button', class: 'starter', onclick: () => { const t = starter(s.layout, kindSel.value, s.w, s.h, S.data?.columns || []); if (s.sheet) { S.print.layout = s.sheet; S.print.paper = 'a4'; savePrefs(); } d.close(); setDoc(t, null); } }, [el('b', { text: s.name }), el('small', { text: s.size + ' · ' + s.desc })])); };
   kindSel.addEventListener('change', fill); fill(); body.push(list);
   const d = dialog('New design', body, { wide: true });
+}
+
+
+/* ---------- Template library ---------- */
+function libraryDialog() {
+  const body = [el('p', { class: 'muted', text: 'Pick one and change it, instead of starting blank. Everything on it can be moved, edited or deleted. It replaces the design you have open, so save that first if you want to keep it. Labels for your customers carry only your own name.' })];
+  let d = null;
+  for (const g of LIBRARY_GROUPS) {
+    body.push(el('h3', { text: g.name }), el('p', { class: 'small muted', style: 'margin:-4px 0 8px', text: g.desc }));
+    const grid = el('div', { class: 'libgrid' });
+    for (const e of LIBRARY.filter(x => x.group === g.id)) {
+      const t = libraryDesign(e), row = Object.assign({}, commonValues(), exampleRow(e) || sampleRow(t.kind, false, t.columns));
+      const thumb = el('div', { class: 'thumb' });
+      const PX = 96 / 25.4, sc = Math.min(190 / (t.w * PX), 92 / (t.h * PX));
+      const inner = el('div', { style: `transform:scale(${sc});transform-origin:center;flex:none` });
+      inner.innerHTML = labelHTML(t, row, {}); thumb.append(inner);
+      const card = el('div', { class: 'starter libcard' }, [
+        el('button', { type: 'button', class: 'libuse', 'aria-label': 'Use ' + e.name, onclick: () => useLibrary(e, d) }, [thumb, el('b', { text: e.name }), el('small', { text: e.desc })]),
+      ]);
+      const csv = exampleCSV(e);
+      if (csv) card.append(el('button', { type: 'button', class: 'btn sm', text: 'Example spreadsheet', title: 'A small .csv with the headings this design uses and a row to copy', onclick: () => downloadText(e.name.replace(/[^\w -]+/g, '').trim() + ' example.csv', csv) }));
+      grid.append(card);
+      requestAnimationFrame(() => fitText(inner));
+    }
+    body.push(grid);
+  }
+  d = dialog('Template library', body, { wide: true });
+}
+function useLibrary(e, d) {
+  const t = libraryDesign(e);
+  if (t.kind === 'table') { t.columns = (t.columns || []).slice(); }
+  if (e.sheet) { S.print.layout = e.sheet; S.print.paper = 'a4'; savePrefs(); }
+  else if (e.paper) { S.print.paper = e.paper; savePrefs(); }
+  d.close(); setDoc(t, null); toast('Opened ' + t.name + '. Change anything you like, then Save as to keep your own copy');
 }
 
 /* ---------- Open ---------- */
