@@ -10,6 +10,7 @@
 import { frostPack, ZONES, NAMES } from './frost.js';
 import { IN_PACK, PH_PACK } from './seasons.js';
 import { REGIONS } from './frost-regions.js';
+import { PLANTS, BY_ID, suitsZone } from '../kit/plantdb.js';
 const R = (a, b) => { const out = []; for (let m = a; ; m = (m % 12) + 1) { out.push(m); if (m === b) break; } return out; };
 const ALL = R(1, 12);
 export const GUIDES = {
@@ -48,6 +49,53 @@ export const GUIDES = {
   fruittree: ['Fruit tree', 'mixed', 'tree', 4, 5, 4, 0, 'full', 'seedling', { tropical: R(4, 8), subtropical: R(5, 8), temperate: R(6, 8), cool: R(6, 8), arid: R(5, 7) }, [], []],
   other: ['Other', 'mixed', 'bush', 0.5, 0.5, 0.5, 90, 'full', 'both', { tropical: ALL, subtropical: ALL, temperate: ALL, cool: ALL, arid: ALL }, [], []],
 };
+/* ---------- perennials from the plant database (kit/plantdb.js): fruit and nut trees, berries, vines and perennial herbs ----------
+   Their planting months come from when each is usually planted (bare-root in winter, or spring, or autumn), limited to the zones
+   whose climate suits them.  For the frost and rainy-season packs they follow the general fruit tree, berry or herb rules (LIKE),
+   and are left out where winters are likely colder than the plant survives (estimated from the zone's frost-free days). */
+const SHAPE_OF = { tree: 'tree', palm: 'tree', clump: 'tree', bush: 'bush', vine: 'vine', herb: 'bush', groundcover: 'bush', grass: 'grass' };
+const PLANT_AU = { winter: { tropical: [6, 7], subtropical: [6, 7, 8], temperate: [6, 7, 8], cool: [6, 7, 8], arid: [6, 7] },
+  spring: { tropical: [10, 11, 12], subtropical: [9, 10, 11], temperate: [9, 10, 11], cool: [10, 11], arid: [9, 10] },
+  autumn: { tropical: [4, 5], subtropical: [3, 4, 5], temperate: [3, 4, 5], cool: [3, 4], arid: [3, 4, 5] } };
+export const LIKE = {};
+export const FROM_DB = new Set();
+for (const p of PLANTS) {
+  if (GUIDES[p.id]) continue;
+  if (p.sowLike && GUIDES[p.sowLike]) {   // an annual that follows another crop's sowing months for now
+    const L = GUIDES[p.sowLike], shape = /parsnip|turnip/.test(p.id) ? 'root' : SHAPE_OF[p.form] || 'bush';
+    GUIDES[p.id] = [p.name, p.fam, shape, p.sp[0], p.sp[1], p.h, p.days, p.sun === 'full' ? 'full' : 'part', L[8], L[9], [], []];
+    LIKE[p.id] = p.sowLike; FROM_DB.add(p.id); continue;
+  }
+  if (p.life !== 'perennial') continue;
+  const au = {};
+  for (const z of ['tropical', 'subtropical', 'temperate', 'cool', 'arid']) au[z] = suitsZone(p, z) === 'no' ? [] : [...new Set([].concat(p.plant || 'spring').flatMap(k => PLANT_AU[k][z]))].sort((a, b) => a - b);
+  const treeish = ['tree', 'palm', 'clump'].includes(p.form);
+  GUIDES[p.id] = [p.name, p.fam, SHAPE_OF[p.form] || 'bush', p.s, Math.max(p.s, 0.3), p.h, 0, p.sun === 'full' ? 'full' : 'part', 'seedling', au, [], []];
+  LIKE[p.id] = treeish ? 'fruittree' : (p.group === 'berry' || p.form === 'vine') ? 'berry' : 'herb';
+  FROM_DB.add(p.id);
+}
+/* about the coldest winter night for a zone, from its frost-free days (a rough guide, used only to leave out plants that would not survive) */
+const FFD = new Map();
+// three curves: continental winters (North America, mainland Europe) are much colder for the same frost-free season than
+// sea-moderated ones (Britain, Ireland, the Netherlands, New Zealand) or southern-hemisphere ones (Australia, South Africa)
+const MIN_BY_FFD = { cont: [[100, -35], [145, -25], [180, -18], [225, -10], [260, -6], [300, -3], [340, -1], [365, 3]],
+  sea: [[100, -16], [150, -12], [200, -8], [240, -5], [300, -2], [365, 2]],
+  south: [[75, -14], [150, -9], [200, -6], [260, -4], [300, -2], [340, 0], [365, 3]] };
+const CURVE = { gb: 'sea', ie: 'sea', nl: 'sea', nz: 'sea', au: 'south', za: 'south' };
+const ZONE_MIN = { 'us-3-4': -37, 'us-5': -26, 'us-6-7': -18, 'us-8': -9, 'us-9': -4, 'us-10-11': 2 };   // United States rows are named by USDA hardiness zone, so use its range
+export function zoneMinC(zone) {
+  if (ZONE_MIN[zone] !== undefined) return ZONE_MIN[zone];
+  const f = FFD.get(zone); if (f === undefined) return null;
+  const T = MIN_BY_FFD[CURVE[String(zone).slice(0, 2)] || 'cont'];
+  if (f <= T[0][0]) return T[0][1];
+  for (let i = 1; i < T.length; i++) if (f <= T[i][0]) { const [a, ta] = T[i - 1], [b, tb] = T[i]; return ta + (tb - ta) * (f - a) / (b - a); }
+  return T[T.length - 1][1];
+}
+// winter chill a zone usually gives, from the same estimate (deciduous fruit need enough cold to flower; low-chill varieties need less)
+const chillOf = m => (m >= 2 ? 100 : m >= 0.5 ? 300 : m >= -1.5 ? 500 : m >= -4 ? 800 : 1500);
+const hardyIn = (crop, zone) => { const p = FROM_DB.has(crop) && BY_ID[crop], m = p && zoneMinC(zone); if (!p || m === null) return true;
+  return (p.minC === undefined || p.minC <= m) && (!p.chill || p.chill[0] <= chillOf(m)); };
+const likeWrap = pk => ({ ...pk, months: (crop, zone) => (hardyIn(crop, zone) ? pk.months(LIKE[crop] || crop, zone) : []) });
 /* ---------- location packs ----------
    A planting guide belongs to one location: a country and a climate zone in it.  Only the member's own location is used,
    and there is no default: with no location set, the guide features are not available.  Today the only pack is
@@ -56,19 +104,20 @@ export const AU_ZONES = [['tropical', 'Tropical'], ['subtropical', 'Subtropical'
 const auLegacy = (crop, zone) => (GUIDES[crop] || GUIDES.other)[9][zone] || [];
 export const PACKS = { AU: { name: 'Australia', zones: AU_ZONES, months: auLegacy } };
 /* the frost-based packs (frost.js): the months are worked out from each zone's typical last frost and frost-free days */
-for (const cc of Object.keys(ZONES)) PACKS[cc] = frostPack(NAMES[cc], ZONES[cc], crop => (GUIDES[crop] || GUIDES.other)[6]);
+for (const cc of Object.keys(ZONES)) { for (const z of ZONES[cc]) FFD.set(z[0], z[3]); PACKS[cc] = likeWrap(frostPack(NAMES[cc], ZONES[cc], crop => (GUIDES[crop] || GUIDES.other)[6])); }
+for (const cc of Object.keys(REGIONS)) for (const z of REGIONS[cc]) FFD.set(z[0], z[3]);
 /* Australia: 41 state and region rows worked out from frost dates, like the other countries. The tropical north has wet and dry
    seasons instead of frost, so those three rows use the hand-written tropical guide. The five older whole-climate choices stay in the list
    (less exact) so plans saved earlier keep working. */
 const AU_TROPICAL = new Set(['au-qld-north', 'au-wa-north', 'au-nt-top']);
-const auFrost = frostPack('Australia', REGIONS.AU.filter(z => !AU_TROPICAL.has(z[0])), crop => (GUIDES[crop] || GUIDES.other)[6]);
+const auFrost = likeWrap(frostPack('Australia', REGIONS.AU.filter(z => !AU_TROPICAL.has(z[0])), crop => (GUIDES[crop] || GUIDES.other)[6]));
 PACKS.AU = {
   name: 'Australia', frost: true,
   zones: [...REGIONS.AU.map(([c, l, , , o]) => [c, l, (o && o.group) || '']), ...AU_ZONES.map(([c, l]) => [c, l, 'Whole-climate choices (less exact)'])],
   months: (crop, zone) => (AU_TROPICAL.has(zone) ? auLegacy(crop, 'tropical') : AU_ZONES.some(z => z[0] === zone) ? auLegacy(crop, zone) : auFrost.months(crop, zone)),
 };
 /* the monsoon and rainy-season packs (seasons.js): the months are the member's own zone's sowing seasons for each crop */
-PACKS.IN = IN_PACK; PACKS.PH = PH_PACK;
+PACKS.IN = likeWrap(IN_PACK); PACKS.PH = likeWrap(PH_PACK);
 export const COUNTRIES = [['AU', 'Australia'], ['NZ', 'New Zealand'], ['GB', 'United Kingdom'], ['IE', 'Ireland'], ['US', 'United States'], ['CA', 'Canada'], ['ZA', 'South Africa'], ['DE', 'Germany'], ['FR', 'France'], ['ES', 'Spain'], ['NL', 'Netherlands'], ['IN', 'India'], ['PH', 'Philippines']];
 export const MESSAGE = 'This function can not be used without a location.';
 /* Is there a guide for this location? */

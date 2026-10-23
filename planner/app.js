@@ -12,15 +12,23 @@ import { fold, foldHeadings } from '../kit/fold.js';
 import { rowsFromApp } from '../print/model.js';
 import * as M from './model.js';
 import { DEMOS } from './demos.js';
+import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
+import { scanDialog, askAI, parseReplyJSON } from '../kit/ai.js';
+import { drawingPrompt, planFromReply } from './scan.js';
 import { GUIDES, PACKS, COUNTRIES, MESSAGE, ISOLATION, hasGuide, zoneFromLat, sowMonths, monthsText, inSeason } from './guides.js';
 
 const app = document.getElementById('app');
 const SVGNS = 'http://www.w3.org/2000/svg';
 const K = { doc: 'ltplanner_doc', prefs: 'ltplanner_prefs', lib: 'ltplanner_blocks', places: 'ltplanner_places' };
-const S = { contours: false, contourStep: 0.5, plan: null, sel: new Set(), tool: 'select', crop: 'tomato', ctx: null, open: {}, view: null, draft: null, sun: true, brush: { op: 'raise', size: 3, power: 1 } };
+const S = { show: (() => { try { const v = localStorage.getItem('ltplanner.show2d'); return ['grow', 'count'].includes(v) ? v : ''; } catch { return ''; } })(), find: '', pulse: null, contours: false, contourStep: 0.5, plan: null, sel: new Set(), tool: 'select', crop: 'tomato', ctx: null, open: {}, view: null, draft: null, sun: true, brush: { op: 'raise', size: 3, power: 1 } };
 let btn3d, hist, tree, svg, world, overlay, propsEl, blocksEl, calEl, placesEl, titleEl, undoB, redoB, dateIn, dateLbl, toolBtns = {};
 
-const cropOptions = () => Object.entries(M.CROPS).sort((a, b) => (a[0] === 'other') - (b[0] === 'other') || a[1][0].localeCompare(b[1][0])).map(([k, c]) => el('option', { value: k, text: c[0] }));
+/* the crop list in groups (from the plant database): vegetables, herbs, fruit, nuts, berries and vines, then the general choices */
+const CROP_GROUPS = [['vegetable', 'Vegetables'], ['herb', 'Herbs'], ['fruit', 'Fruit'], ['nut', 'Nut trees'], ['berry', 'Berries and vines'], ['law', 'Legal only in some places (check your local law)'], ['', 'General']];
+const cropGroup = k => { const p = PLANT_DB[k]; return !p ? '' : p.law ? 'law' : p.group === 'grain' ? 'vegetable' : p.group === 'vine' ? 'berry' : p.group; };
+const cropOptions = () => CROP_GROUPS.map(([g, label]) => {
+  const list = Object.entries(M.CROPS).filter(([k]) => cropGroup(k) === g).sort((a, b) => (a[0] === 'other') - (b[0] === 'other') || a[1][0].localeCompare(b[1][0]));
+  return list.length ? el('optgroup', { label }, list.map(([k, c]) => el('option', { value: k, text: c[0] }))) : null; }).filter(Boolean);
 const located = () => hasGuide(S.plan.site.country, S.plan.site.zone);
 const months = crop => sowMonths(crop, S.plan.site.country, S.plan.site.zone);
 const seasonNote = (crop, iso) => (inSeason(crop, S.plan.site.country, S.plan.site.zone, iso) === false ? M.CROPS[crop][0] + ' is usually sown ' + monthsText(months(crop)) + ' in your area. ' : '');
@@ -45,8 +53,7 @@ const r2 = n => Math.round(n * 100) / 100;
   if (!S.plan) S.plan = DEMOS[0].make();
   S.contours = !!S.plan.site.ground;
   const pl = store.get(K.places); S.places = pl && Array.isArray(pl.list) ? pl : { list: [], from: '' };
-  build();
-  whoAmI().then(w => { if (w.state === 'active' && w.me && w.me.role && btn3d) btn3d.hidden = false; }).catch(() => {});
+  build(g);
   const due = M.dueSoon(S.plan, M.todayISO());
   if (due.length) setTimeout(() => toast((due.length === 1 ? 'Coming up: ' : due.length + ' things coming up, first: ') + due[0].title + ' (' + shortDay(due[0].date) + ')', 6000), g.preview ? 5600 : 800);
   if (g.preview) toast('LT-Planner is not open to everyone yet. You can try it because you are staff.', 5000);
@@ -77,7 +84,7 @@ const fileName = (ext = M.EXT) => (S.plan.name.replace(/[^\w\- ]+/g, '').trim().
 function loadPlan(p) { if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); S.plan = p; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
 
 /* ---------- the page ---------- */
-function build() {
+function build(g = {}) {
   hist = history({ snap: () => JSON.stringify(S.plan), restore: s => { S.plan = JSON.parse(s); if (S.ctx && !S.plan.blocks[S.ctx]) S.ctx = null; [...S.sel].forEach(id => { if (!byId(id)) S.sel.delete(id); }); autosave(); drawAll(); }, onChange: st => { undoB.disabled = !st.canUndo; redoB.disabled = !st.canRedo; } });
   const fileBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Plans: new, open, save', title: 'Plans', 'aria-haspopup': 'true' }, [icon('folder')]);
   const fileWrap = el('div', { class: 'kswitch' }, [fileBtn]);
@@ -89,6 +96,8 @@ function build() {
     menu = el('div', { class: 'kmenu', role: 'menu', style: 'left:0;right:auto' }, [
       mi('plus', 'New plan', 'Blank, or a demo plan', newDialog),
       mi('folder', 'Open a plan file…', 'A .ltplan file from this device', openFile),
+      mi('list', 'My plants…', 'Your own plant varieties: colours, shapes, crosses', openMyPlants),
+      mi('image', 'Scan a drawing (AI)…', 'Photo of a garden drawing: lays out the areas', scanDrawing),
       mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }))),
       el('div', { class: 'sep' }),
       mi('upload', 'Plan for the app', 'Beds and planned sowings, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))),
@@ -101,12 +110,12 @@ function build() {
   undoB = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Undo', title: 'Undo (Ctrl+Z)', disabled: true, onclick: () => hist.undo() }, [icon('undo')]);
   redoB = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Redo', title: 'Redo (Ctrl+Shift+Z)', disabled: true, onclick: () => hist.redo() }, [icon('redo')]);
   titleEl = el('span', { class: 'small muted hide-sm pl-title' });
-  btn3d = el('button', { type: 'button', class: 'btn sm', hidden: true, title: '3D view (beta). Staff only while this is being built', 'aria-label': '3D view (beta)', onclick: open3d }, ['3D', el('span', { class: 'hide-sm', text: ' view (beta)' })]);
+  btn3d = el('button', { type: 'button', class: 'btn sm', title: '3D view (beta)', 'aria-label': '3D view (beta)', onclick: open3d }, ['3D', el('span', { class: 'hide-sm', text: ' view (beta)' })]);
   const slot = el('div', { class: 'pr-slot' }, [fileWrap, undoB, redoB, btn3d, el('span', { class: 'sp' }), titleEl]);
 
   /* left: tools, crops, blocks */
   const T = [['select', 'Select', 'up', 'V'], ['bed', 'Bed', 'rect', 'B'], ['area', 'Area', 'grid', 'A'], ['path', 'Path', 'path', 'P'], ['fence', 'Fence', 'fence', 'F'],
-    ['plant', 'Plant', 'tag', 'L'], ['rows', 'Crop rows', 'rows', 'R'], ['ground', 'Shape ground', 'hill', 'G'], ['tank', 'Water tank', 'ellipse', 'W'], ['pipe', 'Drip line', 'drip', 'D'], ['bench', 'Seed bench', 'table', 'S'], ['note', 'Note', 'text', 'N'], ['task', 'Job', 'calendar', 'J']];
+    ['plant', 'Plant', 'tag', 'L'], ['rows', 'Crop rows', 'rows', 'R'], ['ground', 'Shape ground', 'hill', 'G'], ['tank', 'Water tank', 'ellipse', 'W'], ['pipe', 'Drip line', 'drip', 'D'], ['bench', 'Seed bench', 'table', 'S'], ['building', 'Building', 'house', 'H'], ['greenhouse', 'Greenhouse', 'greenhouse', 'E'], ['pergola', 'Pergola', 'pergola', 'O'], ['trellis', 'Trellis', 'trellis', 'T'], ['wall', 'Retaining wall', 'wall', 'K'], ['note', 'Note', 'text', 'N'], ['task', 'Job', 'calendar', 'J']];
   const toolGrid = el('div', { class: 'addgrid', role: 'group', 'aria-label': 'Tools' });
   for (const [k, l, ic, key] of T) { const b = el('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', title: l + ' (' + key + ')', onclick: () => setTool(k) }, [icon(ic), l]); toolBtns[k] = b; toolGrid.append(b); }
   const cropSel = el('select', { 'aria-label': 'Crop for the Plant tool', onchange: e => { S.crop = e.target.value; } }, cropOptions());
@@ -128,11 +137,13 @@ function build() {
   dateIn.addEventListener('input', () => { S.plan.date = isoFromDay(+dateIn.value); drawScene(); });
   dateIn.addEventListener('change', () => commit('date'));
   const sunB = el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': 'true', 'aria-label': 'Show the sun path', title: 'Sun path', onclick: () => { S.sun = !S.sun; sunB.setAttribute('aria-pressed', String(S.sun)); drawAll(); } }, [icon('info')]);
+  const showSel = el('select', { class: 'pl-showsel', 'aria-label': 'Text on beds, greenhouses and benches', title: 'What to write under each bed, greenhouse and bench' }, [['', 'Names only'], ['grow', 'Names + what is growing'], ['count', 'Names + how many']].map(([v, l]) => el('option', { value: v, text: l })));
+  showSel.value = S.show; showSel.addEventListener('change', () => { S.show = showSel.value; try { localStorage.setItem('ltplanner.show2d', S.show); } catch {} drawScene(); });
   const stageBar = el('div', { class: 'stage-bar' }, [
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zoom out', onclick: () => zoomBy(1 / 1.25) }, [icon('zoomOut')]),
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zoom in', onclick: () => zoomBy(1.25) }, [icon('zoomIn')]),
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Fit the plan', onclick: () => { fit(); drawAll(); } }, [icon('fit')]),
-    sunB, el('span', { class: 'grow' }), icon('calendar'), dateIn, dateLbl]);
+    sunB, showSel, el('span', { class: 'grow' }), icon('calendar'), dateIn, dateLbl]);
   svg = sv('svg', { class: 'pl-svg', role: 'img', 'aria-label': 'The plan, seen from above', tabindex: '0' });
   world = sv('g'); overlay = sv('g'); svg.append(world, overlay);
   const stage = el('div', { class: 'pr-stage' }, [stageBar, el('div', { class: 'pr-canvas pl-canvas' }, [svg, floatEl || el('span')])]);
@@ -141,17 +152,17 @@ function build() {
   const treeBox = el('div');
   propsEl = el('div');
   const right = el('aside', { class: 'pr-right', 'aria-label': 'Feature tree and properties' }, [
-    el('div', { class: 'pane tree-pane' }, [(() => { const f = fold('planner', 'Feature tree', true); f.body.append(treeBox); return f.box; })()]),
+    el('div', { class: 'pane tree-pane' }, [(() => { const f = fold('planner', 'Feature tree', true); f.body.append(findBox(), treeBox); return f.box; })()]),
     el('div', { class: 'pane props-pane' }, [propsEl])]);
   const mob = el('nav', { class: 'pl-mob' }, [el('button', { type: 'button', class: 'btn', text: 'Tools', onclick: () => { document.body.classList.remove('show-right'); document.body.classList.toggle('show-left'); } }), el('button', { type: 'button', class: 'btn', text: 'Tree and details', onclick: () => { document.body.classList.remove('show-left'); document.body.classList.toggle('show-right'); } })]);
   app.textContent = '';
-  app.append(el('div', { class: 'pr-shell' }, [topBar({ tool: 'planner', slot }), el('div', { class: 'pr-view' }, [left, stage, right]), mob]));
+  app.append(el('div', { class: 'pr-shell' }, [topBar({ tool: 'planner', slot, who: g.alias ? { alias: g.alias, offline: g.offline, checked: g.checked } : null }), el('div', { class: 'pr-view' }, [left, stage, right]), mob]));
 
   tree = featureTree(treeBox, {
     label: 'Feature tree', empty: 'Nothing in this plan yet. Pick a tool on the left.',
     nodes: treeNodes, isSelected: id => S.sel.has(id),
-    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group', rows: 'grid' }[n.kind] || 'rect'),
-    onSelect: (id, add) => { if (id.startsWith('f:')) return; select(id, add); },
+    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group', rows: 'grid', building: 'house', greenhouse: 'greenhouse', pergola: 'pergola', trellis: 'trellis', wall: 'wall' }[n.kind] || 'rect'),
+    onSelect: (id, add) => { if (id.startsWith('f:')) return; S.pulse = { id, until: Date.now() + 3000 }; setTimeout(drawScene, 3100); select(id, add); },
     onToggle: (id, flag) => {
       const list = id.startsWith('f:') ? items().filter(it => it.folder === id.slice(2)) : [byId(id)].filter(Boolean);
       if (!list.length) return; const v = !list.every(it => it[flag]); list.forEach(it => { it[flag] = v; }); commit();
@@ -174,11 +185,25 @@ function build() {
   setTool('select');
   fit(); drawAll();
 }
+/* find a plant or variety: every word must appear in the item's name, crop, variety or look name; matches glow on the plan, in the list and in 3D */
+const findText = it => [it.name, it.kind === 'plant' || it.kind === 'rows' ? (M.CROPS[it.crop] || [])[0] : '', it.variety, lookName(it)].join(' ').toLowerCase();
+const isMatch = it => !!S.find && S.find.split(/\s+/).filter(Boolean).every(w => findText(it).includes(w));
+const matchIds = () => { const out = []; const walk = list => list.forEach(it => { if (it.kind === 'block') walk((S.plan.blocks[it.def] || {}).items || []); else if (isMatch(it)) out.push(it.id); }); walk(S.plan.items); return out; };
+const glowing = it => isMatch(it) || (S.pulse && S.pulse.id === it.id && Date.now() < S.pulse.until);
 const treeNodes = () => M.FOLDERS.map(([k, label]) => {
-  const kids = items().filter(it => it.folder === k).slice().reverse().map(it => ({ id: it.id, name: it.name, kind: it.kind, hidden: it.hidden, locked: it.locked, off: it.off, note: it.kind === 'block' ? 'block' : it.kind === 'plant' && it.sow ? shortDay(it.sow) : '' }));
+  const kids = items().filter(it => it.folder === k && (!S.find || isMatch(it))).slice().reverse().map(it => ({ id: it.id, name: it.name, kind: it.kind, hidden: it.hidden, locked: it.locked, off: it.off, glow: isMatch(it), note: it.kind === 'block' ? 'block' : (it.kind === 'plant' || it.kind === 'rows') ? [it.variety, it.kind === 'plant' && it.sow ? shortDay(it.sow) : ''].filter(Boolean).join(' · ') : '' }));
   const f = 'f:' + k;
-  return { id: f, name: label, kind: 'folder', children: kids, open: S.open[f] !== false && (kids.length > 0 || S.open[f] === true), hidden: kids.length > 0 && kids.every(x => x.hidden), locked: kids.length > 0 && kids.every(x => x.locked), off: kids.length > 0 && kids.every(x => x.off) };
-}).filter(f => f.children.length || ['beds', 'planting', 'structures'].includes(f.id.slice(2)));
+  return { id: f, name: label, kind: 'folder', children: kids, open: (S.find ? kids.length > 0 : S.open[f] !== false && (kids.length > 0 || S.open[f] === true)), hidden: kids.length > 0 && kids.every(x => x.hidden), locked: kids.length > 0 && kids.every(x => x.locked), off: kids.length > 0 && kids.every(x => x.off) };
+}).filter(f => f.children.length || (!S.find && ['beds', 'planting', 'structures'].includes(f.id.slice(2))));
+
+
+function findBox() {
+  const inp = el('input', { type: 'search', class: 'pl-find', placeholder: 'Find a plant or variety…', 'aria-label': 'Find a plant or variety', autocomplete: 'off', maxlength: '60' }), msg = el('p', { class: 'small muted pl-find-msg', role: 'status' });
+  const run = () => { S.find = inp.value.trim().toLowerCase().slice(0, 60); const n = S.find ? matchIds().length : 0; msg.textContent = S.find ? (n ? n + ' found. They glow on the plan and in 3D. Press Enter to select them.' : 'Nothing matches that.') : ''; tree.render(); drawScene(); };
+  inp.addEventListener('input', run);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { const ids = matchIds(); if (ids.length) { S.sel = new Set(ids); drawAll(); } } else if (e.key === 'Escape' && inp.value) { inp.value = ''; run(); e.stopPropagation(); } });
+  return el('div', { class: 'pl-findbox' }, [inp, msg]);
+}
 
 /* ---------- dates ---------- */
 const yearOf = () => +S.plan.date.slice(0, 4);
@@ -207,11 +232,12 @@ function drawItem(g, it, plan, faded) {
   const grp = sv('g', { 'data-id': it.id, opacity: faded ? 0.35 : null });
   if (k.box) {
     const tf = `translate(${it.x} ${it.y}) rotate(${it.rot})`;
-    const fill = it.kind === 'bed' ? COL.bedFill : it.kind === 'area' ? it.fill : it.kind === 'tank' ? COL.tank : it.kind === 'rows' ? '#DCE8C4' : COL.bench;
-    const stroke = it.kind === 'bed' ? COL.bed : it.kind === 'area' ? 'none' : '#4A5A6A';
-    const shape = it.kind === 'tank' ? sv('ellipse', { rx: it.w / 2, ry: it.h / 2 }) : sv('rect', { x: -it.w / 2, y: -it.h / 2, width: it.w, height: it.h, rx: it.kind === 'bed' ? Math.min(0.08, it.w / 10) : 0 });
+    const fill = it.kind === 'bed' ? COL.bedFill : it.kind === 'area' ? areaFill(it) : it.kind === 'tank' ? COL.tank : it.kind === 'rows' ? '#DCE8C4' : it.kind === 'building' ? it.roofColour : it.kind === 'greenhouse' ? '#dcefee' : it.kind === 'pergola' ? 'none' : COL.bench;
+    const stroke = it.kind === 'bed' ? COL.bed : it.kind === 'area' ? 'none' : it.kind === 'pergola' ? it.colour : it.kind === 'greenhouse' ? it.frame : '#4A5A6A';
+    const shape = (it.kind === 'tank' || it.shape === 'round') ? sv('ellipse', { rx: it.w / 2, ry: it.h / 2 }) : sv('rect', { x: -it.w / 2, y: -it.h / 2, width: it.w, height: it.h, rx: it.kind === 'bed' ? Math.min(0.08, it.w / 10) : 0 });
     shape.setAttribute('transform', tf); shape.setAttribute('fill', fill); shape.setAttribute('stroke', stroke); shape.setAttribute('stroke-width', it.kind === 'bed' && it.raised > 0 ? 3 : 1.5); shape.setAttribute('vector-effect', 'non-scaling-stroke');
     grp.append(shape);
+    if (it.kind === 'building' || it.kind === 'greenhouse' || it.kind === 'pergola') { const lines = structLines2D(it); if (lines) { const p = sv('path', { d: lines, fill: 'none', stroke: it.kind === 'building' ? shade(it.roofColour, -0.35) : it.kind === 'pergola' ? it.colour : it.frame, 'stroke-width': it.kind === 'pergola' ? 2 : 1, 'vector-effect': 'non-scaling-stroke' }); p.setAttribute('transform', tf); grp.append(p); } }
     if (it.kind === 'rows') {      // the rows themselves: one line per row (or a light hatch when they would be too close to tell apart)
       const L = M.rowsLayout(it), px = L.rowSpacing * S.view.scale, gr = M.growth(it, plan.date), cc = COL.plant[(M.CROPS[it.crop] || M.CROPS.other)[1]] || COL.plant.bush;
       if (gr === null && !faded) grp.setAttribute('opacity', 0.35);
@@ -221,10 +247,13 @@ function drawItem(g, it, plan, faded) {
       rl.setAttribute('transform', tf); grp.append(rl);
     }
     if (it.kind !== 'area' || it.w * S.view.scale > 60) grp.append(label(it.name, it.x, it.y + (it.kind === 'area' ? 0 : it.h / 2 + 0.05), it.kind === 'area'));
+    if (S.show && ['bed', 'greenhouse', 'bench'].includes(it.kind) && it.w * S.view.scale > 40) { const t = contentsText(it, plan); if (t) { const l2 = label(t, it.x, it.y + it.h / 2 + 0.05 + 14 / S.view.scale, false); l2.setAttribute('class', 'pl-label pl-sub'); grp.append(l2); } }
   } else if (k.line) {
     const d = 'M' + it.pts.map(p => p.join(' ')).join('L');
     if (it.kind === 'path') grp.append(sv('path', { d, fill: 'none', stroke: COL.path, 'stroke-width': it.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    if (it.kind === 'fence') { grp.append(sv('path', { d, fill: 'none', stroke: COL.fence, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' })); it.pts.forEach(p => grp.append(sv('rect', { x: p[0] - 0.06, y: p[1] - 0.06, width: 0.12, height: 0.12, fill: COL.fence }))); }
+    if (it.kind === 'fence') { const st = it.style || 'palings', c = it.colour || { palings: COL.fence, pickets: '#9a8f7a', slats: '#6b5238', wire: '#7a6a55', panels: '#8a998c' }[st]; grp.append(sv('path', { d, fill: 'none', stroke: c, 'stroke-width': st === 'wire' ? 1.5 : 3, 'stroke-dasharray': st === 'wire' ? '6 4' : st === 'pickets' ? '2 2' : null, 'vector-effect': 'non-scaling-stroke' })); it.pts.forEach(p => grp.append(sv('rect', { x: p[0] - 0.06, y: p[1] - 0.06, width: 0.12, height: 0.12, fill: c }))); }
+    if (it.kind === 'trellis') { grp.append(sv('path', { d, fill: 'none', stroke: '#6E8B4A', 'stroke-width': 2, 'stroke-dasharray': it.style === 'wire' ? '2 3' : null, 'vector-effect': 'non-scaling-stroke' })); it.pts.forEach(p => grp.append(sv('circle', { cx: p[0], cy: p[1], r: 0.05, fill: '#6b4f33' }))); }
+    if (it.kind === 'wall') { const c = WALL_2D[it.material] || WALL_2D.sleeper; grp.append(sv('path', { d, fill: 'none', stroke: c, 'stroke-width': 0.2 + it.height * 0.1, 'stroke-linejoin': 'miter' })); grp.append(sv('path', { d, fill: 'none', stroke: shade(c, -0.4), 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' })); }
     if (it.kind === 'pipe') grp.append(sv('path', { d, fill: 'none', stroke: COL.pipe, 'stroke-width': 2, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
     grp.append(sv('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(0.4, it.width || 0), class: 'hit' }));
   } else if (it.kind === 'plant') {
@@ -249,6 +278,19 @@ function drawItem(g, it, plan, faded) {
   }
   g.append(grp);
 }
+/* what is growing in a bed, greenhouse or bench on the plan's date, as one line of text (the plan's "Text on plan" choice) */
+let flatCache = { items: null, n: -1, all: [] };
+function flatAll(plan) {
+  const out = [], walk = list => { for (const x of list) { if (x.off || x.hidden) continue; if (x.kind === 'block') walk(M.blockItems(plan, x)); else out.push(x); } };
+  walk(plan.items);
+  return out.filter(x => x.kind === 'plant' && M.growth(x, plan.date) !== null);   // only plants growing on the plan's date: each bed then checks far fewer
+}
+const flatNow = plan => { const key = plan.items.length + '|' + plan.date; if (flatCache.items !== plan.items || flatCache.key !== key || S.dirtyFlat) { flatCache = { items: plan.items, key, all: flatAll(plan) }; S.dirtyFlat = false; } return flatCache.all; };
+function contentsText(it, plan) {
+  const g = M.growingIn(flatNow(plan), it, plan.date); if (!g.length) return '';
+  const one = e => e.name + (S.show === 'count' ? ' ×' + e.n : '') + (e.variety ? ' (' + e.variety + ')' : '');
+  return g.slice(0, 4).map(one).join(', ') + (g.length > 4 ? ' +' + (g.length - 4) + ' more' : '');
+}
 function label(text, x, y, centre, note) {
   const fs = 12 / S.view.scale;
   const t = sv('text', { x, y: centre ? y : y + fs, 'font-size': fs, 'stroke-width': 3 / S.view.scale, 'text-anchor': 'middle', 'dominant-baseline': centre ? 'middle' : 'auto', class: 'pl-label' + (note ? ' note' : '') });
@@ -270,6 +312,7 @@ function drawContours() {
 }
 function drawScene() {
   if (!S.view || !svg) return;
+  flatCache = { items: null, key: '', all: [] };   // the bed text is worked out fresh for every drawing
   const v = S.view, { w, h } = S.plan.site;
   world.setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.scale})`);
   world.textContent = ''; overlay.textContent = ''; ring = null;
@@ -282,6 +325,8 @@ function drawScene() {
   const editing = S.ctx ? S.plan.blocks[S.ctx] : null;
   if (editing) { S.plan.items.forEach(it => drawItem(world, it, S.plan, true)); world.append(sv('rect', { x: -1000, y: -1000, width: 3000, height: 3000, fill: 'var(--desk)', opacity: 0.55 })); }
   items().forEach(it => drawItem(world, it, S.plan, false));
+  // glow: items found with the Find box, and the one just picked in the list
+  { const walk = list => list.forEach(it => { if (it.kind === 'block') return; if (glowing(it)) { const b = M.bounds(it, S.plan), pad = 0.25; world.append(sv('rect', { x: b[0] - pad, y: b[1] - pad, width: b[2] - b[0] + 2 * pad, height: b[3] - b[1] + 2 * pad, rx: 0.3, class: 'pl-glow', 'vector-effect': 'non-scaling-stroke' })); } }); walk(items()); }
   // selection
   for (const id of S.sel) {
     const it = byId(id); if (!it) continue;
@@ -328,9 +373,46 @@ function handlesFor(it) {
   return [];
 }
 
+/* an area with a surface but the standard colour is drawn in its surface's colour, so a house, a driveway and a lawn do not all look alike */
+const SURF_2D = { lawn: '#cfe3b5', gravel: '#e6dfd0', mulch: '#cdb08f', soil: '#b9a088', pavers: '#d9d4ca', decking: '#d8bd9a' };
+const areaFill = it => (it.surface && SURF_2D[it.surface] && (!it.fill || it.fill.toUpperCase() === '#C9DDB8') ? SURF_2D[it.surface] : it.fill);
+const WALL_2D = { sleeper: '#7a5a3a', stone: '#9a948a', block: '#a8a39a', brick: '#a5553a' };
+const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.round(f < 0 ? v * (1 + f) : v + (255 - v) * f)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); };
+/* plan lines inside a building (ridge and hips), greenhouse (glazing bars) or pergola (rafters), in the item's own frame */
+function structLines2D(it) {
+  const W = it.w / 2, H = it.h / 2, out = [];
+  if (it.kind === 'building') {
+    const along = it.ridge === 'w' || (it.ridge === 'auto' && it.w >= it.h), a = along ? W : H, b = along ? H : W, P = (u, v) => (along ? [u, v] : [v, u]).join(' ');
+    if (it.roof === 'gable') out.push('M' + P(-a, 0) + 'L' + P(a, 0));
+    else if (it.roof === 'hip') { const r = Math.max(0, a - b); out.push('M' + P(-r, 0) + 'L' + P(r, 0), 'M' + P(-a, -b) + 'L' + P(-r, 0) + 'L' + P(-a, b), 'M' + P(a, -b) + 'L' + P(r, 0) + 'L' + P(a, b)); }
+    else if (it.roof === 'skillion') out.push('M' + P(-a, -b * 0.9) + 'L' + P(a, -b * 0.9));
+    else out.push('M' + (-W + 0.15) + ' ' + (-H + 0.15) + 'H' + (W - 0.15) + 'V' + (H - 0.15) + 'H' + (-W + 0.15) + 'Z');
+  } else if (it.kind === 'greenhouse') {
+    const along = it.w >= it.h, a = along ? W : H, b = along ? H : W, P = (u, v) => (along ? [u, v] : [v, u]).join(' ');
+    out.push('M' + P(-a, 0) + 'L' + P(a, 0)); for (let u = -a + 0.6; u < a - 0.1; u += 0.6) out.push('M' + P(u, -b) + 'L' + P(u, b));
+  } else if (it.kind === 'pergola') {
+    const along = it.w >= it.h, a = along ? W : H, b = along ? H : W, P = (u, v) => (along ? [u, v] : [v, u]).join(' ');
+    out.push('M' + P(-a, -b + 0.1) + 'L' + P(a, -b + 0.1), 'M' + P(-a, b - 0.1) + 'L' + P(a, b - 0.1));
+    for (let u = -a + 0.1; u <= a - 0.05; u += 0.5) out.push('M' + P(u, -b) + 'L' + P(u, b));
+  }
+  return out.join('');
+}
+/* a short "about this plant" box from the plant database, with a hint when the plan's location is likely too cold or too warm for it */
+function plantFacts(crop) {
+  const p = PLANT_DB[crop]; if (!p) return null;
+  const bits = [];
+  if (p.life === 'perennial') bits.push('About ' + p.h + ' m tall and ' + p.s + ' m wide' + (p.years ? ', first crop after about ' + p.years + (p.years === 1 ? ' year' : ' years') : '') + (p.decid ? ', loses its leaves in winter' : '') + '.');
+  if (p.chill) bits.push('Needs about ' + p.chill[0] + ' to ' + p.chill[1] + ' hours of winter chill (low-chill varieties need less).');
+  if (p.minC !== undefined) bits.push('Takes winter lows down to about ' + p.minC + ' °C once established.');
+  if (p.fr) bits.push('Fruit: ' + p.fr + '.');
+  if (p.note) bits.push(p.note);
+  const ms = located() ? months(crop) : null, warn = ms && !ms.length && p.life === 'perennial' ? el('p', { class: 'small pl-warn', text: 'May not grow outdoors in your area: winters are likely too cold' + (p.chill ? ' or too mild to give it enough chill' : '') + ', or the climate does not suit it. A warm sheltered spot, a pot or a variety bred for your climate may still work. Check your local guide.' }) : null;
+  return el('div', { class: 'pl-guide pl-facts' }, [el('b', { text: 'About ' + p.name.toLowerCase() }), el('p', { class: 'small muted', text: p.bot + (p.alt && p.alt.length ? ' · also called ' + p.alt.join(', ') : '') }), ...bits.map(t => el('p', { class: 'small', text: t })), warn]);
+}
 /* ---------- tools and pointer ---------- */
 const smallScreen = () => window.matchMedia('(max-width:860px)').matches;
-const TOOL_HINT = { bed: 'Bed: drag a box on the plan.', area: 'Area: drag a box on the plan.', rows: 'Crop rows: drag a box; rows run along its width.', tank: 'Water tank: drag a box.', bench: 'Seed bench: drag a box.',
+const TOOL_HINT = { bed: 'Bed: drag a box on the plan.', area: 'Area: drag a box on the plan.', rows: 'Crop rows: drag a box; rows run along its width.', tank: 'Water tank: drag a box.', bench: 'Seed bench: drag a box.', building: 'Building: drag a box for the walls.', greenhouse: 'Greenhouse: drag a box.', pergola: 'Pergola: drag a box.',
+  trellis: 'Trellis: tap each end or corner, then tap the last one again to finish.', wall: 'Retaining wall: tap each corner, then tap the last one again to finish.',
   path: 'Path: tap each corner, then tap the last one again to finish.', fence: 'Fence: tap each corner, then tap the last one again to finish.', pipe: 'Drip line: tap each corner, then tap the last one again to finish.',
   plant: 'Plant: tap where it goes.', note: 'Note: tap where it goes.', task: 'Job: tap where it is.', ground: 'Shape ground: drag on the plan. Two fingers move and zoom.', select: 'Select: tap an item; drag empty space to move around.' };
 function setTool(t) {
@@ -363,6 +445,7 @@ function wireCanvas() {
     svg.focus(); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
     if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; return; }
     const p = toWorld(e), sp = [snap(p[0]), snap(p[1])];
+    if (S.pickPoint) { const f = S.pickPoint; S.pickPoint = null; S.pickCancel = null; f([r2(Math.min(S.plan.site.w, Math.max(0, p[0]))), r2(Math.min(S.plan.site.h, Math.max(0, p[1])))]); return; }
     if (e.button === 1 || (e.button === 0 && e.altKey)) { drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: S.view.x, vy: S.view.y }; return; }
     const hd = e.target.getAttribute && e.target.getAttribute('data-handle');
     if (S.tool === 'select') {
@@ -415,7 +498,7 @@ function wireCanvas() {
     if (d.draw) {
       const dr = S.draft; S.draft = null;
       let [x0, y0] = dr.a, [x1, y1] = dr.b;
-      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6], rows: [10, 4] }[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; }
+      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6], rows: [10, 4], building: [10, 8], greenhouse: [3, 2.4], pergola: [4, 3] }[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; }
       add(Object.assign({ kind: S.tool, name: S.tool === 'rows' ? M.CROPS[S.crop][0] + ' rows' : M.KINDS[S.tool].name, x: r2((x0 + x1) / 2), y: r2((y0 + y1) / 2), w: r2(Math.abs(x1 - x0)), h: r2(Math.abs(y1 - y0)), rot: 0 }, S.tool === 'rows' ? { crop: S.crop } : {}));
       return;
     }
@@ -438,10 +521,10 @@ function add(raw) {
   items().push(it); S.sel = new Set([it.id]); commit();
 }
 
-/* ---------- 3D view (beta, staff only) ---------- */
+/* ---------- 3D view (beta, open to every member) ---------- */
 async function open3d() {
   btn3d.disabled = true;
-  try { const mod = await import('./view3d.js'); await mod.open3D({ plan: exportPlan(), M, TR, date: S.plan.date }); }
+  try { const mod = await import('./view3d.js'); await mod.open3D({ plan: exportPlan(), M, TR, date: S.plan.date, find: S.find || '', glow: [...new Set([...matchIds(), ...(S.find ? [] : [...S.sel])])] }); }
   catch (e) { toast('The 3D view could not start: ' + (e && e.message ? e.message : 'unknown error'), 6000); }
   btn3d.disabled = false;
 }
@@ -462,12 +545,14 @@ function brushBar() {
   floatEl = el('div', { class: 'pl-brushfloat', role: 'group', 'aria-label': 'Ground brush (quick)', hidden: true }, [
     ...BRUSH_OPS.map(([k, l]) => el('button', { type: 'button', class: 'chip', 'data-op': k, 'aria-pressed': String(k === b.op), onclick: () => { b.op = k; paint(); } }, [l])),
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Smaller brush', onclick: () => setSize(b.size > 3 ? b.size / 1.5 : b.size - 0.5) }, [icon('zoomOut')]), flbl,
-    el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Bigger brush', onclick: () => setSize(b.size >= 2 ? b.size * 1.5 : b.size + 0.5) }, [icon('zoomIn')])]);
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Bigger brush', onclick: () => setSize(b.size >= 2 ? b.size * 1.5 : b.size + 0.5) }, [icon('zoomIn')]),
+    el('button', { type: 'button', class: 'chip', text: 'Wizard…', title: 'Ground wizard: slopes, mounds, ponds, terraces and swales in plain terms', onclick: () => openGroundWizard() })]);
   const pow = el('select', { 'aria-label': 'Brush strength', onchange: e => { b.power = +e.target.value; } }, [['0', 'Gentle'], ['1', 'Normal'], ['2', 'Strong']].map(([v, t]) => el('option', { value: v, text: t })));
   pow.value = String(Math.min(2, b.power)); b.power = +pow.value;
   brushInfo = el('p', { class: 'small muted', text: 'Move over the plan to see the height.' });
   brushEl = el('div', { class: 'pl-guide', hidden: true }, [el('b', { text: 'Shape ground' }),
     el('p', { class: 'small', text: 'Drag to paint hills and hollows. Raise and Lower change the height, Smooth softens bumps, Flatten pulls the ground to the height where you start dragging (good for a pad or terrace). Ctrl+Z undoes a stroke.' }),
+    el('button', { type: 'button', class: 'btn sm primary', text: 'Ground wizard…', onclick: () => openGroundWizard() }), el('p', { class: 'small muted', text: 'Or touch up by hand with a brush:' }),
     ops, el('label', { class: 'small pl-field' }, ['Brush size ', lbl, size]), el('label', { class: 'small pl-field' }, ['Strength', pow]), brushInfo]);
   return brushEl;
 }
@@ -504,6 +589,87 @@ function endSculpt() {
   autoStep(d.g); S.plan.site.ground = TR.packGrid(d.g); S.contours = true; contourCache = { gd: null, step: 0, lines: [] }; commit();
 }
 
+/* ---------- ground wizard: whole shapes in plain terms (the brushes are for touching up) ---------- */
+const COMPASS = [['north', 0], ['north-east', 45], ['east', 90], ['south-east', 135], ['south', 180], ['south-west', 225], ['west', 270], ['north-west', 315]];
+const WIZ = [
+  ['tilt', 'Slope the whole site', 'The whole yard falls one way, for example 0.5 m toward the north-east.'],
+  ['mound', 'A mound or hill', 'A raised area, round in shape, with a flat-ish top.'],
+  ['hollow', 'A hollow or pond', 'A dip with a flat bottom: a pond, a sunken garden, a soak.'],
+  ['level', 'A level terrace for an item', 'Flatten the ground under a bed, bench, tank or area and blend it into the slope.'],
+  ['swale', 'A swale along a line', 'A shallow trench along a path, drip line or fence you have drawn, with a bank on the lower side to hold water.']];
+function pickOnPlan(hideEl, msg) {
+  return new Promise(res => { hideEl.style.display = 'none'; toast(msg, 4000); S.pickPoint = p => { hideEl.style.display = ''; res(p); }; S.pickCancel = () => { hideEl.style.display = ''; res(null); }; });
+}
+function openGroundWizard(start) {
+  const site = S.plan.site, body = el('div', { class: 'pl-wiz' }); let d;
+  const now = () => groundGrid() || TR.flatSite(site.w, site.h);
+  const choose = () => {
+    body.textContent = '';
+    body.append(el('p', { class: 'small muted', text: 'Pick what you want to do. You will see what it changes before anything happens, and Undo takes it back.' }),
+      ...WIZ.map(([k, t, sub]) => el('button', { type: 'button', class: 'pl-wizcard', onclick: () => step(k) }, [el('b', { text: t }), el('span', { class: 'small muted', text: sub })])));
+  };
+  const num = (label, v, step_, min, max, unit) => { const i = el('input', { type: 'number', value: String(v), step: String(step_), min: String(min), max: String(max), inputmode: 'decimal' }); return [i, el('label', { class: 'small pl-field' }, [label + (unit ? ' (' + unit + ')' : ''), i])]; };
+  const step = k => {
+    body.textContent = ''; const def = WIZ.find(w => w[0] === k), out = el('p', { class: 'small', role: 'status' }), fields = [];
+    let where = [site.w / 2, site.h / 2]; const whereTxt = el('span', { class: 'small' });
+    const showWhere = () => { whereTxt.textContent = 'Middle at ' + r2(where[0]) + ' m across, ' + r2(where[1]) + ' m down.'; };
+    const whereRow = () => el('div', { class: 'pl-field small' }, [whereTxt, el('div', { class: 'actions' }, [
+      el('button', { type: 'button', class: 'btn sm', text: 'Tap the plan to choose', onclick: async () => { const p = await pickOnPlan(d.box.parentNode, 'Tap the plan where the middle should go. Esc to cancel.'); if (p) { where = p; showWhere(); preview(); } } }),
+      el('button', { type: 'button', class: 'btn sm', text: 'Middle of the site', onclick: () => { where = [site.w / 2, site.h / 2]; showWhere(); preview(); } })])]);
+    let make;   // (grid) => description of what was done, or an error string starting with '!'
+    if (k === 'tilt') {
+      const [fall, fl] = num('How much it falls', 0.5, 0.05, 0.05, 50, 'm'), dir = el('select', { 'aria-label': 'Falls toward' }, COMPASS.map(([n, b]) => el('option', { value: String(b), text: n }))); dir.value = '45';
+      fields.push(fl, el('label', { class: 'small pl-field' }, ['Falls toward', dir]));
+      make = w => { const f = +fall.value; if (!(f > 0 && f <= 50)) return '!Enter how many metres it falls.'; TR.tiltSite(w, site.w, site.h, f, +dir.value, site.north || 0); return 'falls ' + r2(f) + ' m toward the ' + dir.selectedOptions[0].text; };
+    } else if (k === 'mound' || k === 'hollow') {
+      const [dia, dl] = num('Across', k === 'mound' ? 4 : 3, 0.5, 0.5, 200, 'm'), [ht, hl] = num(k === 'mound' ? 'Height' : 'Depth', k === 'mound' ? 0.6 : 0.5, 0.05, 0.05, 20, 'm');
+      fields.push(dl, hl, whereRow()); showWhere();
+      make = w => { const a = +dia.value, hh = +ht.value; if (!(a > 0 && hh > 0)) return '!Enter the size.'; TR.dome(w, where[0], where[1], a, k === 'mound' ? hh : -hh, k === 'mound' ? 0.25 : 0.5); return (k === 'mound' ? 'a mound ' : 'a hollow ') + r2(a) + ' m across and ' + r2(hh) + ' m ' + (k === 'mound' ? 'high' : 'deep'); };
+    } else if (k === 'level') {
+      const list = items().filter(it => ['bed', 'bench', 'tank', 'area', 'rows'].includes(it.kind));
+      if (!list.length) { body.append(el('p', { text: 'Draw a bed, bench, tank, area or crop rows first, then come back to level the ground under it.' }), el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn', text: 'Back', onclick: choose })])); return; }
+      const pick = el('select', { 'aria-label': 'Item' }, list.map(it => el('option', { value: it.id, text: (it.name || M.KINDS[it.kind].name) + ' (' + M.KINDS[it.kind].name.toLowerCase() + ')' })));
+      const sel = [...S.sel].map(byId).find(it => it && list.includes(it)); if (sel) pick.value = sel.id;
+      const how = el('select', { 'aria-label': 'Level it at' }, [['mean', 'the average height (cut and fill)'], ['min', 'its lowest point (dig in)'], ['max', 'its highest point (build up)']].map(([v, l]) => el('option', { value: v, text: l })));
+      fields.push(el('label', { class: 'small pl-field' }, ['Item', pick]), el('label', { class: 'small pl-field' }, ['Level it at', how]));
+      make = w => { const it = byId(pick.value); if (!it) return '!Pick an item.'; const u = TR.groundUnder(w, it.x, it.y, it.w, it.h, it.rot || 0), lv = { mean: u.mean, min: u.min, max: u.max }[how.value];
+        TR.levelBox(w, it.x, it.y, it.w, it.h, it.rot || 0, lv, Math.max(0.5, Math.min(2, Math.max(it.w, it.h) * 0.25))); return 'level ground at ' + r2(lv) + ' m under ' + (it.name || 'it'); };
+    } else {
+      const list = items().filter(it => ['path', 'pipe', 'fence'].includes(it.kind) && it.pts && it.pts.length >= 2);
+      if (!list.length) { body.append(el('p', { text: 'Draw the line first: use the Path or Drip line tool along where the swale should go (across the slope, on the contour), then come back.' }), el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn', text: 'Back', onclick: choose })])); return; }
+      const pick = el('select', { 'aria-label': 'Along' }, list.map(it => el('option', { value: it.id, text: (it.name || M.KINDS[it.kind].name) + ' (' + M.KINDS[it.kind].name.toLowerCase() + ')' })));
+      const [wd, wl] = num('Width', 1, 0.1, 0.3, 10, 'm'), [dp, dl] = num('Depth', 0.3, 0.05, 0.05, 3, 'm'), bank = el('input', { type: 'checkbox', checked: true });
+      fields.push(el('label', { class: 'small pl-field' }, ['Along', pick]), wl, dl, el('label', { class: 'small pl-check' }, [bank, ' Heap the soil as a bank on the lower side']));
+      make = w => { const it = byId(pick.value); if (!it) return '!Pick a line.'; TR.swale(w, it.pts, +wd.value, +dp.value, bank.checked); return 'a swale ' + r2(+wd.value) + ' m wide and ' + r2(+dp.value) + ' m deep along ' + (it.name || 'the line'); };
+    }
+    const before = now(), r0 = TR.range(before);
+    const preview = () => { const w = { cell: before.cell, nx: before.nx, ny: before.ny, z: before.z.slice() }, msg = make(w);
+      if (msg.startsWith('!')) { out.className = 'small pl-warn'; out.textContent = msg.slice(1); return null; }
+      const r1 = TR.range(w); out.className = 'small'; out.textContent = 'This makes ' + msg + '. The ground will run from ' + r2(r1.min) + ' m to ' + r2(r1.max) + ' m' + (groundGrid() ? ' (now ' + r2(r0.min) + ' to ' + r2(r0.max) + ' m).' : ' (it is flat now).'); return { w, msg }; };
+    body.append(el('p', { class: 'small muted', text: def[2] }), ...fields, out, el('div', { class: 'actions' }, [
+      el('button', { type: 'button', class: 'btn primary', text: 'Make it', onclick: () => { const r = preview(); if (!r) return; S.plan.site.ground = TR.packGrid(r.w); S.contours = true; d.close(); commit(); toast('Done: ' + r.msg + '. Undo takes it back.', 5000); } }),
+      el('button', { type: 'button', class: 'btn', text: 'Back', onclick: choose })]));
+    body.querySelectorAll('input,select').forEach(x => x.addEventListener('input', preview)); body.querySelectorAll('select').forEach(x => x.addEventListener('change', preview)); preview();
+  };
+  d = dialog('Ground wizard', [body], { onClose: () => { if (S.pickCancel) { S.pickPoint = null; S.pickCancel = null; } } });
+  if (start) step(start); else choose();
+}
+
+/* ---------- the ground under a bed, bench, tank, area or crop rows ---------- */
+function groundUnderPanel(it) {
+  const g = groundGrid(); if (!g) return null;
+  const u = TR.groundUnder(g, it.x, it.y, it.w, it.h, it.rot || 0), cm = v => Math.round(v * 100);
+  const how = el('select', { 'aria-label': 'Level it at' }, [['mean', 'the average height (cut and fill)'], ['min', 'its lowest point (dig in)'], ['max', 'its highest point (build up)']].map(([v, l]) => el('option', { value: v, text: l })));
+  const words = u.fall < 0.02 ? 'The ground here is level.' : 'The ground under it falls ' + cm(u.fall) + ' cm (from ' + r2(u.max) + ' m to ' + r2(u.min) + ' m).' + (it.kind === 'bed' && (it.raised || 0) >= 0.02 ? ' In 3D the bed is built level, with deeper boards on the low side.' : '');
+  return el('div', { class: 'pl-guide' }, [el('b', { text: 'Ground under this' }), el('p', { class: 'small', text: words }),
+    u.fall < 0.02 ? null : el('label', { class: 'small pl-field' }, ['Level it at', how]),
+    u.fall < 0.02 ? null : el('button', { type: 'button', class: 'btn sm', text: 'Level the ground under this', onclick: () => {
+      const w = { cell: g.cell, nx: g.nx, ny: g.ny, z: g.z.slice() }, level = { mean: u.mean, min: u.min, max: u.max }[how.value];
+      TR.levelBox(w, it.x, it.y, it.w, it.h, it.rot || 0, level, Math.max(0.5, Math.min(2, Math.max(it.w, it.h) * 0.25)));
+      S.plan.site.ground = TR.packGrid(w); commit(); toast('Ground levelled at ' + r2(level) + ' m under ' + (it.name || 'this') + ', blending into the slope around it. Ctrl+Z undoes it.', 5000);
+    } })]);
+}
+
 /* ---------- ground heights from a file ---------- */
 function groundPanel(s) {
   const gd = s.ground, g = gd && TR.unpackGrid(gd), box = el('div', { class: 'pl-guide' });
@@ -513,9 +679,9 @@ function groundPanel(s) {
     const cb = el('input', { type: 'checkbox', checked: S.contours, onchange: e => { S.contours = e.target.checked; drawScene(); } });
     box.append(el('b', { text: 'Ground heights are set' }), el('p', { class: 'small', text: 'Lowest ' + r2(r.min) + ' m, highest ' + r2(r.max) + ' m: a fall of ' + r2(r.max - r.min) + ' m across the site. One height every ' + gd.cell + ' m.' }),
       el('label', { class: 'small pl-check' }, [cb, ' Show contour lines']), el('label', { class: 'small pl-field' }, ['Contour every', sl]),
-      el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Replace from a file…', onclick: importGround }), el('button', { type: 'button', class: 'btn sm', text: 'Remove', onclick: async () => { if (!(await confirmBox('Remove ground heights', 'The site goes back to flat ground.', 'Remove'))) return; delete S.plan.site.ground; S.contours = false; commit(); } })]));
-  } else box.append(el('b', { text: 'Ground heights' }), el('p', { class: 'small', text: 'The ground is flat until you add heights. Shape it by hand with the Shape ground tool (G), or bring in real mapping data from a file: an ASCII grid (.asc, such as a free 1 m LiDAR ground model) or a list of survey points (.csv or .xyz with x, y, height on each line). The file stays on your device.' }),
-    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Add ground heights from a file…', onclick: importGround })]));
+      el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Ground wizard…', onclick: () => openGroundWizard() }), el('button', { type: 'button', class: 'btn sm', text: 'Replace from a file…', onclick: importGround }), el('button', { type: 'button', class: 'btn sm', text: 'Remove', onclick: async () => { if (!(await confirmBox('Remove ground heights', 'The site goes back to flat ground.', 'Remove'))) return; delete S.plan.site.ground; S.contours = false; commit(); } })]));
+  } else box.append(el('b', { text: 'Ground heights' }), el('p', { class: 'small', text: 'The ground is flat until you add heights. Shape it with the Ground wizard (slopes, mounds, ponds, terraces, swales) or the Shape ground brushes (G), or bring in real mapping data from a file: an ASCII grid (.asc, such as a free 1 m LiDAR ground model) or a list of survey points (.csv or .xyz with x, y, height on each line). The file stays on your device.' }),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Ground wizard…', onclick: () => openGroundWizard() }), el('button', { type: 'button', class: 'btn sm', text: 'Add ground heights from a file…', onclick: importGround })]));
   return box;
 }
 async function importGround() {
@@ -555,6 +721,7 @@ function wireKeys() {
     if (mod && k === 'd') { e.preventDefault(); duplicate(); return; }
     if (mod && k === 'b') { e.preventDefault(); makeBlockFromSel(); return; }
     if (e.key === 'Escape' && sculptDrag) { cancelSculpt(); return; }
+    if (e.key === 'Escape' && S.pickPoint) { const c = S.pickCancel; S.pickPoint = null; S.pickCancel = null; if (c) c(); return; }
     if (e.key === 'Escape') { if (S.draft) { S.draft = null; drawAll(); } else if (S.ctx) doneEditing(); else select(null); return; }
     if (e.key === 'Enter' && S.draft && S.draft.pts) { finishLine(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.size) { e.preventDefault(); removeSel(); return; }
@@ -562,7 +729,7 @@ function wireKeys() {
       e.preventDefault(); const g = S.plan.site.grid * (e.shiftKey ? 5 : 1), d = { ArrowLeft: [-g, 0], ArrowRight: [g, 0], ArrowUp: [0, -g], ArrowDown: [0, g] }[e.key];
       [...S.sel].map(byId).filter(it => it && !it.locked).forEach(it => M.moveItem(it, d[0], d[1])); commit('nudge'); return;
     }
-    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task', r: 'rows', g: 'ground' }[k]; if (t) setTool(t); }
+    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task', r: 'rows', g: 'ground', h: 'building', e: 'greenhouse', o: 'pergola', t: 'trellis', k: 'wall' }[k]; if (t) setTool(t); }
   });
 }
 function removeSel() { const L = items(); const keep = L.filter(it => !S.sel.has(it.id) || it.locked); L.length = 0; L.push(...keep); S.sel.clear(); commit(); }
@@ -627,6 +794,7 @@ function field(label, value, set, attrs = {}) {
   inp.addEventListener('change', () => { set(attrs.type === 'number' ? Number(inp.value) : inp.value); commit(); });
   return el('label', { class: 'small pl-field' }, [label, inp]);
 }
+const pickF = (label, it, key, opts) => el('label', { class: 'small pl-field' }, [label, (() => { const sl = el('select', { onchange: e => { it[key] = e.target.value; commit(); } }, opts.map(([v, l]) => el('option', { value: v, text: l }))); sl.value = it[key] || opts[0][0]; return sl; })()]);
 const numF = (label, it, key, step = 0.1, min = -10000, max = 10000) => field(label, it[key], v => { if (Number.isFinite(v)) it[key] = Math.min(max, Math.max(min, Math.round(v * 1000) / 1000)); }, { type: 'number', step: String(step), min: String(min), max: String(max), inputmode: 'decimal' });
 let cur = null, pend = null;
 const section = (title, open = true) => { pend = { title, open }; };
@@ -674,11 +842,12 @@ function drawProps() {
   if (M.PLACE_KINDS.has(it.kind)) put(placePicker(it));
   section('Size and position');
   if (k.box) put(el('div', { class: 'pl-row' }, [numF('Width (m)', it, 'w', 0.1, 0.05, 2000), numF('Depth (m)', it, 'h', 0.1, 0.05, 2000)]), el('div', { class: 'pl-row' }, [numF('Centre x', it, 'x'), numF('Centre y', it, 'y')]), numF('Turn (degrees)', it, 'rot', 5, -360, 360));
+  if (k.box && S.plan.site.ground && ['bed', 'bench', 'tank', 'area', 'rows', 'building', 'greenhouse', 'pergola'].includes(it.kind) && !S.ctx) put(groundUnderPanel(it));
   if (it.kind === 'rows') {
     const L = M.rowsLayout(it);
     section('Crop and dates');
     put(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const g = GUIDES[e.target.value] || GUIDES.other; Object.assign(it, { crop: e.target.value, rowSpacing: g[4] || it.rowSpacing, plantSpacing: g[3] || it.plantSpacing }); if (/ rows$/.test(it.name)) it.name = M.CROPS[e.target.value][0] + ' rows'; commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
-      field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }),
+      field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }), lookRow(it),
       el('div', { class: 'pl-row' }, [numF('Row spacing (m)', it, 'rowSpacing', 0.05, 0.05, 50), numF('Plant spacing (m)', it, 'plantSpacing', 0.05, 0.02, 50)]),
       el('p', { class: 'small muted', text: L.rows.toLocaleString() + ' rows of ' + L.cols.toLocaleString() + ' plants = ' + L.count.toLocaleString() + ' plants. Saved as one rule, not one object per plant.' + (L.rowSpacing !== it.rowSpacing ? ' Spacing was widened to keep this under 2 million plants.' : '') }),
       el('div', { class: 'pl-row' }, [field('Sow / plant', it.sow, v => { it.sow = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' }), field('Harvest', it.harvest, v => { it.harvest = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' })]),
@@ -706,18 +875,33 @@ function drawProps() {
   }
   section('Look');
   if (it.kind === 'area') put(field('Colour', it.fill, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.fill = v; }, { type: 'color' }));
+  if (it.kind === 'area' || it.kind === 'path') { const opts = it.kind === 'area' ? ['', 'lawn', 'gravel', 'mulch', 'soil', 'pavers', 'decking'] : ['', 'gravel', 'pavers', 'mulch', 'decking', 'lawn'], names = { '': it.kind === 'area' ? 'Guess from the name and colour' : 'Gravel (standard)', lawn: 'Lawn', gravel: 'Gravel', mulch: 'Bark mulch', soil: 'Soil', pavers: 'Pavers', decking: 'Decking' };
+    put(el('label', { class: 'small pl-field' }, ['Surface in 3D', (() => { const sl = el('select', { onchange: e => { if (e.target.value) it.surface = e.target.value; else delete it.surface; commit(); } }, opts.map(v => el('option', { value: v, text: names[v] }))); sl.value = it.surface || ''; return sl; })()])); }
   if (it.kind === 'path') put(numF('Width (m)', it, 'width', 0.1, 0.1, 20));
-  if (it.kind === 'fence') put(numF('Height (m)', it, 'height', 0.1, 0.1, 6));
+  if (it.kind === 'fence') put(numF('Height (m)', it, 'height', 0.1, 0.1, 6), pickF('Style', it, 'style', [['palings', 'Timber palings'], ['pickets', 'Pickets'], ['slats', 'Horizontal slats'], ['wire', 'Wire and posts'], ['panels', 'Steel panels']]), field('Colour (leave for the standard)', it.colour || '#6b5238', v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.colour = v; }, { type: 'color' }));
+  if (it.kind === 'trellis') put(numF('Height (m)', it, 'height', 0.1, 0.3, 5), pickF('Style', it, 'style', [['wire', 'Wires between posts'], ['lattice', 'Timber lattice'], ['mesh', 'Mesh panel']]), el('p', { class: 'small muted', text: 'For climbing beans, peas, grapes, passionfruit and espalier.' }));
+  if (it.kind === 'wall') put(numF('Height (m)', it, 'height', 0.05, 0.1, 4), pickF('Material', it, 'material', [['sleeper', 'Timber sleepers'], ['stone', 'Stone'], ['block', 'Concrete block'], ['brick', 'Brick']]), el('p', { class: 'small muted', text: 'In 3D the wall stands on the lower ground and its top follows the higher side. Shape the ground (or use the Ground wizard, Level) to make the terrace behind it.' }));
+  if (it.kind === 'building') put(numF('Wall height (m)', it, 'wallH', 0.1, 0.5, 30),
+    pickF('Roof', it, 'roof', [['gable', 'Gable (two slopes)'], ['hip', 'Hip (four slopes)'], ['skillion', 'Skillion (one slope)'], ['flat', 'Flat']]),
+    it.roof === 'flat' ? null : numF('Roof pitch (degrees)', it, 'pitch', 1, 0, 60),
+    it.roof === 'flat' ? null : pickF('Ridge runs', it, 'ridge', [['auto', 'Along the longer side'], ['w', 'Along the width'], ['h', 'Along the depth']]),
+    el('div', { class: 'pl-row' }, [field('Walls', it.wallColour, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.wallColour = v; }, { type: 'color' }), field('Roof', it.roofColour, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.roofColour = v; }, { type: 'color' })]),
+    (() => { const cb = el('input', { type: 'checkbox', checked: it.windows !== false, onchange: e => { it.windows = e.target.checked; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Windows and a door']); })(),
+    el('p', { class: 'small muted', text: 'A house, garage or shed. Its shadow shows in 3D on High and Ultra quality.' }));
+  if (it.kind === 'greenhouse') put(numF('Wall height (m)', it, 'wallH', 0.1, 0.5, 8), field('Frame colour', it.frame, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.frame = v; }, { type: 'color' }));
+  if (it.kind === 'pergola') put(numF('Height (m)', it, 'height', 0.1, 1, 6), pickF('Cover', it, 'cover', [['open', 'Open rafters'], ['shade', 'Shade cloth'], ['vine', 'Grown over with a vine'], ['roof', 'Clear roof sheets']]), field('Timber colour', it.colour, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.colour = v; }, { type: 'color' }));
+  if ((it.kind === 'bed' || it.kind === 'area') && !S.ctx) put((() => { const cb = el('input', { type: 'checkbox', checked: it.shape === 'round', onchange: e => { if (e.target.checked) it.shape = 'round'; else delete it.shape; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Round (fits a circle or oval in the box)']); })());
   if (k.line) put(el('p', { class: 'small muted', text: 'Length: ' + r2(it.pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - it.pts[i - 1][0], p[1] - it.pts[i - 1][1]) : 0), 0)) + ' m. Drag the corner squares to reshape.' }));
   if (it.kind === 'plant') {
     section('Crop and dates');
     put(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const c = M.CROPS[e.target.value]; Object.assign(it, { crop: e.target.value, shape: c[1], spread: c[2], height: c[3] }); commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
       it.link ? el('p', { class: 'small pl-good', text: 'Linked to the app: ' + (((S.places.plants || []).find(p => p.id === it.link) || {}).title || 'a plant record') + '. The plan for the app refers to this record.' }) : null,
-      field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }),
+      field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }), lookRow(it),
       el('div', { class: 'pl-row' }, [numF('Spread (m)', it, 'spread', 0.05, 0.02, 40), numF('Height (m)', it, 'height', 0.1, 0.02, 40)]),
       el('div', { class: 'pl-row' }, [field('Sow / plant', it.sow, v => { it.sow = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' }), field('Harvest', it.harvest, v => { it.harvest = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' })]),
       numF('Remind me (days before)', it, 'remind', 1, 0, 60),
       (() => { const cb = el('input', { type: 'checkbox', checked: !!it.save, onchange: e => { if (e.target.checked) it.save = true; else delete it.save; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Saving seed from this plant']); })());
+    { const facts = plantFacts(it.crop); if (facts) put(facts); }
     section('Seed saving and warnings');
     { const risks = M.crossRisks(items(), it), iso = ISOLATION[it.crop];
       if (risks.length) put(el('div', { class: 'pl-guide pl-cross' }, [el('b', { text: 'Could cross' }),
@@ -860,6 +1044,51 @@ function newDialog() {
     el('h3', { text: 'Demo plans' }),
     ...DEMOS.map(x => el('button', { type: 'button', class: 'starter', onclick: async () => { if (!(await leaveOk())) return; d.close(); loadPlan(x.make()); } }, [el('b', { text: x.name }), el('small', { text: x.note })])),
   ])]);
+}
+
+/* ---------- plant editor: the member's own plant looks (planner/editor.js) ---------- */
+const lookName = it => (it.look && S.plan.varieties && S.plan.varieties[it.look] ? S.plan.varieties[it.look].name : '');
+function lookRow(it) {
+  const own = lookName(it);
+  return el('div', { class: 'pl-look' }, [el('span', { class: 'small', text: 'Look in 3D: ' + (own || 'the default ' + M.CROPS[it.crop][0].toLowerCase()) }),
+    el('button', { type: 'button', class: 'btn small', text: own ? 'Edit this plant…' : 'Edit this plant\'s look…', onclick: () => editLook(it) }),
+    own ? el('button', { type: 'button', class: 'btn small', text: 'Back to default', onclick: () => { delete it.look; commit(); } }) : null,
+    el('button', { type: 'button', class: 'btn small', text: 'My plants…', onclick: () => openMyPlants(it) })]);
+}
+async function editLook(it) {
+  const E = await import('./editor.js'), base = M.presetFor(it.crop, it.variety);
+  E.openPlantEditor({ baseKey: base, variety: it.look && S.plan.varieties ? S.plan.varieties[it.look] : null, cropName: M.CROPS[it.crop][0].toLowerCase(), cropLabel: M.CROPS[it.crop][0], onUse: (v, o) => useLook(it, v, o) });
+}
+async function openMyPlants(it) {
+  const E = await import('./editor.js'), one = it && it.id && (it.kind === 'plant' || it.kind === 'rows') ? it : null;
+  E.openLibrary({ onPick: one ? (v, o) => useLook(one, v, o) : undefined });
+}
+/* put a variety into the plan and on the plant (and on its other plantings: all of the crop if asked, and every planting already using it) */
+async function useLook(it, v, o = {}) {
+  const P = await import('./plants/plants.js');
+  S.plan.varieties = S.plan.varieties || {}; S.plan.varieties[v.id] = v;
+  let ex = { h: 0, r: 0 }; try { ex = P.extent(P.specFromJSON(P.specToJSON(v.spec)), 1); } catch { /* keep the old size */ }
+  const walk = (list, f) => list.forEach(x => { if (x.kind === 'block') walk(((S.plan.blocks[x.def] || {}).items) || [], f); else f(x); });
+  const targets = new Set([it]); walk([...S.plan.items, ...Object.values(S.plan.blocks).flatMap(b => b.items)], x => { if ((x.kind === 'plant' || x.kind === 'rows') && ((o.all && x.crop === it.crop) || x.look === v.id)) targets.add(x); });
+  for (const t of targets) { t.look = v.id; if (!t.variety) t.variety = v.name; if (t.kind === 'plant' && ex.r) { t.spread = r2(Math.max(0.02, 2 * ex.r)); t.height = r2(Math.max(0.02, ex.h)); } }
+  commit(); toast('Using ' + v.name + (targets.size > 1 ? ' on ' + targets.size + ' plantings' : ''));
+}
+
+/* ---------- Scan a drawing (AI helper, the member's own key) ---------- */
+function scanDrawing() {
+  const s = S.plan.site;
+  scanDialog({ title: 'Scan a garden drawing', unit: 'm', labels: ['Width', 'Depth'], start: [Math.round(s.w) || 20, Math.round(s.h) || 15], min: 1, max: 5000, step: 0.5, consentKind: 'drawing', goText: 'Lay out the plan',
+    consentText: 'LT-Planner sends your photo of the drawing so the AI can find the lawns, beds, paths, buildings and fences and measure where they are.',
+    intro: 'Take a photo of a drawing of your garden or property (a sketch, a landscape plan or a printed site plan), from above if you can, and give the real size of the whole drawn area. LT-Planner lays out the areas, beds, paths, fences, buildings and existing trees, so you can add the planting yourself. It starts a new plan, so download this one first if you want to keep it.',
+    onGo: async (photo, w, h) => {
+      const reply = await askAI({ images: [photo], text: drawingPrompt(w, h), maxTokens: 8000 });
+      const r = planFromReply(parseReplyJSON(reply), { w, h, name: 'Scanned plan', base: S.plan });
+      if (!r.total) throw new Error('Nothing could be laid out from that photo. Try a sharper photo from straight above, with the whole drawing in view.');
+      if (S.plan.items.length && !(await leaveOk())) throw new Error('Kept your current plan.');
+      loadPlan(r.plan);
+      const c = r.counts, bits = [['area', 'area'], ['bed', 'bed'], ['building', 'building'], ['path', 'path'], ['fence', 'fence'], ['plant', 'tree'], ['note', 'note']].filter(([k]) => c[k]).map(([k, w1]) => c[k] + ' ' + w1 + (c[k] > 1 ? 's' : ''));
+      return 'Laid out ' + (bits.join(', ') || r.total + ' items') + '. Check the sizes and positions, then set the location in Plan settings for the planting guide.';
+    } });
 }
 const leaveOk = () => confirmBox('Start another plan?', 'This plan stays only until you start another. Download it first if you want to keep it.', 'Continue');
 async function openFile() {

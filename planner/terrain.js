@@ -110,6 +110,68 @@ export function brushStroke(g, op, radius, amount, level = 0) {
   };
 }
 
+/* ---------- ground under a box-shaped item (bed, bench, tank, area) ---------- */
+/* points spread over a w x h box centred on (cx, cy) and turned rot degrees (the plan's rotation: clockwise on screen) */
+export function boxPoints(cx, cy, w, h, rot = 0, step = 0.5) {
+  const a = rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), nx = Math.max(1, Math.ceil(w / step)), ny = Math.max(1, Math.ceil(h / step)), out = [];
+  for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) { const u = (i / nx - 0.5) * w, v = (j / ny - 0.5) * h; out.push([cx + u * c - v * s, cy + u * s + v * c]); }
+  return out;
+}
+/* lowest, highest and average ground height under the box */
+export function groundUnder(g, cx, cy, w, h, rot = 0) {
+  let lo = Infinity, hi = -Infinity, sum = 0, n = 0;
+  for (const [x, y] of boxPoints(cx, cy, w, h, rot, Math.max(g.cell, Math.min(w, h) / 8, 0.25))) { const z = heightAt(g, x, y); lo = Math.min(lo, z); hi = Math.max(hi, z); sum += z; n++; }
+  return { min: lo, max: hi, mean: sum / n, fall: hi - lo };
+}
+/* make the ground level under the box at `level` (default: the average), blending back to the old ground over `margin` metres around it.
+   Changes g in place; returns how many grid points moved. */
+export function levelBox(g, cx, cy, w, h, rot = 0, level, margin = 0.5) {
+  if (level === undefined || !Number.isFinite(level)) level = groundUnder(g, cx, cy, w, h, rot).mean;
+  const a = -rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), R = Math.hypot(w, h) / 2 + margin + g.cell * 2;
+  const x0 = Math.max(0, Math.floor((cx - R) / g.cell)), x1 = Math.min(g.nx - 1, Math.ceil((cx + R) / g.cell)), y0 = Math.max(0, Math.floor((cy - R) / g.cell)), y1 = Math.min(g.ny - 1, Math.ceil((cy + R) / g.cell));
+  let n = 0;
+  for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) {
+    const dx = i * g.cell - cx, dy = j * g.cell - cy, u = dx * c - dy * s, v = dx * s + dy * c;
+    const out = Math.max(Math.abs(u) - w / 2, Math.abs(v) - h / 2, 0) - g.cell * 1.5; if (out > margin) continue;   // a ring one grid step wide around the box is level too, so its edges are flat
+    const t = margin > 0 ? Math.max(0, out) / margin : 0, k = 1 - t * t * (3 - 2 * t), z = j * g.nx + i, nz = g.z[z] + (level - g.z[z]) * k;
+    if (Math.abs(nz - g.z[z]) > 1e-9) { g.z[z] = nz; n++; }
+  }
+  return n;
+}
+
+/* ---------- the ground wizard: whole shapes in plain terms ---------- */
+const smooth01 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+/* the whole site falls `fall` metres toward a compass bearing (0 = north, 90 = east), measured across the site in that direction.
+   `north` is where north points on the plan (degrees, 0 = up).  Adds to whatever is there. */
+export function tiltSite(g, w, h, fall, bearing, north = 0) {
+  const a = (bearing + north) * Math.PI / 180, dx = Math.sin(a), dy = -Math.cos(a), pr = [[0, 0], [w, 0], [0, h], [w, h]].map(([x, y]) => x * dx + y * dy), lo = Math.min(...pr), hi = Math.max(...pr), span = Math.max(1e-6, hi - lo);
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { const t = ((i * g.cell) * dx + (j * g.cell) * dy - lo) / span; g.z[j * g.nx + i] += fall * (1 - Math.min(1, Math.max(0, t))); }
+}
+/* a round mound (height > 0) or hollow / pond (height < 0) `diameter` across, with a flat top or bottom `flat` (0..0.9) of the way out */
+export function dome(g, cx, cy, diameter, height, flat = 0.25) {
+  const R = Math.max(g.cell, diameter / 2), x0 = Math.max(0, Math.floor((cx - R) / g.cell)), x1 = Math.min(g.nx - 1, Math.ceil((cx + R) / g.cell)), y0 = Math.max(0, Math.floor((cy - R) / g.cell)), y1 = Math.min(g.ny - 1, Math.ceil((cy + R) / g.cell));
+  let n = 0; for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) { const d = Math.hypot(i * g.cell - cx, j * g.cell - cy) / R; if (d >= 1) continue; g.z[j * g.nx + i] += height * (1 - smooth01((d - flat) / (1 - flat))); n++; }
+  return n;
+}
+/* a swale: a shallow trench `width` wide and `depth` deep along a line, with the soil heaped as a bank on the lower side (on contour,
+   it catches water running down the slope).  pts: [[x, y], ...].  The lower side is found from the ground beside the middle of the line. */
+export function swale(g, pts, width, depth, bank = true) {
+  if (!pts || pts.length < 2) return 0;
+  const dist = (x, y) => { let best = Infinity, side = 0; for (let k = 1; k < pts.length; k++) { const [ax, ay] = pts[k - 1], [bx, by] = pts[k], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2)), px = ax + t * vx, py = ay + t * vy, d = Math.hypot(x - px, y - py);
+      if (d < best) { best = d; side = Math.sign(vx * (y - ay) - vy * (x - ax)); } } return [best, side]; };
+  const m = Math.floor(pts.length / 2), [ax, ay] = pts[m - 1] || pts[0], [bx, by] = pts[m], mx = (ax + bx) / 2, my = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l;
+  const off = width * 1.2, lowSide = heightAt(g, mx + nx * off, my + ny * off) < heightAt(g, mx - nx * off, my - ny * off) ? 1 : -1;   // +1 = the left of the line's direction
+  const reach = width * 2.2; let n = 0;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), x0 = Math.max(0, Math.floor((Math.min(...xs) - reach) / g.cell)), x1 = Math.min(g.nx - 1, Math.ceil((Math.max(...xs) + reach) / g.cell)), y0 = Math.max(0, Math.floor((Math.min(...ys) - reach) / g.cell)), y1 = Math.min(g.ny - 1, Math.ceil((Math.max(...ys) + reach) / g.cell));
+  for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) {
+    const [d, side] = dist(i * g.cell, j * g.cell); let dz = 0;
+    if (d < width / 2) dz -= depth * 0.5 * (1 + Math.cos(Math.PI * d / (width / 2)));
+    if (bank && side === lowSide) { const c = width * 1.1, bw = width * 0.9, t = Math.abs(d - c) / bw; if (t < 1) dz += depth * 0.75 * 0.5 * (1 + Math.cos(Math.PI * t)); }
+    if (dz) { g.z[j * g.nx + i] += dz; n++; }
+  }
+  return n;
+}
+
 /* ---------- saving in a plan file ---------- */
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 3) { const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0); s += B64[n >> 18 & 63] + B64[n >> 12 & 63] + (i + 1 < bytes.length ? B64[n >> 6 & 63] : '=') + (i + 2 < bytes.length ? B64[n & 63] : '='); } return s; }

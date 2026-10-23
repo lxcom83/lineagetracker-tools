@@ -11,8 +11,13 @@
      blocks: { id: { name, items: [ item ] } }   block definitions; their items use the block's own coordinates
    }
    Every item: { id, kind, folder, name, hidden, locked, off }, then by kind:
-     bed, area, tank, bench:  x, y (centre), w, h, rot (degrees)  + bed: raised (m); area: fill
-     path, fence, pipe:       pts [[x, y], ...]  + path: width; fence: height
+     bed, area, tank, bench:  x, y (centre), w, h, rot (degrees)  + bed: raised (m); area: fill, surface (optional: lawn, gravel, mulch, soil, pavers, decking)
+     bed, area (optional):    shape: 'round' (an ellipse in the box; otherwise rectangle)
+     building, greenhouse, pergola: x, y, w, h, rot  + building: wallH, roof ('gable', 'hip', 'flat', 'skillion'), pitch (degrees),
+                              ridge ('auto', 'w', 'h'), wallColour, roofColour, windows (true/false); greenhouse: wallH, frame (colour);
+                              pergola: height, cover ('open', 'shade', 'vine', 'roof'), colour
+     path, fence, pipe, trellis, wall: pts [[x, y], ...]  + path: width; fence: height, style ('palings', 'pickets', 'slats', 'wire', 'panels'), colour;
+                              trellis: height, style ('wire', 'lattice', 'mesh'); wall (retaining wall): height, material ('sleeper', 'stone', 'block', 'brick')
      plant:                   x, y, crop, shape, spread, height, sow, harvest (dates), link (app record id, optional),
                               after (id of the planting it follows in the same spot), remind (days before each event), save (saving seed from it)
      task:                    x, y, text, date, every ('', 'week', 'month', 'year'), remind   a job on the calendar (prune, feed, clean the tank)
@@ -27,6 +32,7 @@
 
 import { GUIDES, PACKS, ISOLATION } from './guides.js';
 import { unpackGrid } from './terrain.js';
+import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
 export const FORMAT = 'lt-planner-plan', VERSION = 1, EXT = '.ltplan';
 export const FOLDERS = [
   ['ground', 'Ground'], ['models', 'Buildings and models'], ['structures', 'Structures'], ['beds', 'Beds and areas'],
@@ -34,6 +40,7 @@ export const FOLDERS = [
 ];
 const FOLDER_KEYS = FOLDERS.map(f => f[0]);
 export const SHAPES = ['upright', 'bush', 'vine', 'tree', 'root', 'grass'];
+export const SURFACE_KEYS = ['lawn', 'gravel', 'mulch', 'soil', 'pavers', 'decking'];   // planner/surfaces.js draws them
 export const KINDS = {
   bed: { name: 'Bed', folder: 'beds', box: true }, area: { name: 'Area', folder: 'beds', box: true },
   bench: { name: 'Seed bench', folder: 'structures', box: true }, tank: { name: 'Water tank', folder: 'water', box: true },
@@ -43,7 +50,13 @@ export const KINDS = {
   task: { name: 'Job', folder: 'ground', point: true },
   block: { name: 'Block', folder: 'beds', point: true },
   rows: { name: 'Crop rows', folder: 'planting', box: true },
+  building: { name: 'Building', folder: 'structures', box: true }, greenhouse: { name: 'Greenhouse', folder: 'structures', box: true },
+  pergola: { name: 'Pergola', folder: 'structures', box: true },
+  trellis: { name: 'Trellis', folder: 'structures', line: true }, wall: { name: 'Retaining wall', folder: 'structures', line: true },
 };
+export const ROOFS = ['gable', 'hip', 'flat', 'skillion'], COVERS = ['open', 'shade', 'vine', 'roof'], FENCE_STYLES = ['palings', 'pickets', 'slats', 'wire', 'panels'],
+  TRELLIS_STYLES = ['wire', 'lattice', 'mesh'], WALL_MATERIALS = ['sleeper', 'stone', 'block', 'brick'];
+const hexOr = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : d), pick = (v, list) => (list.includes(v) ? v : list[0]);
 /* Crops come from the planting guides (guides.js): [name, shape, spread (m, full size), height (m), days to harvest]. */
 export const CROPS = Object.fromEntries(Object.entries(GUIDES).map(([k, g]) => [k, [g[0], g[2], g[2] === 'vine' ? g[4] : g[3], g[5], g[6]]]));
 
@@ -67,10 +80,16 @@ function cleanItem(it, ids, defs) {
     Object.assign(o, { x: r3(num(it.x, 0)), y: r3(num(it.y, 0)), w: r3(num(it.w, 1, 0.05, 2000)), h: r3(num(it.h, 1, 0.05, 2000)), rot: r3(num(it.rot, 0, -360, 360)) });
     if (it.kind === 'bed') o.raised = r3(num(it.raised, 0.3, 0, 3));
     if (it.kind === 'area') o.fill = /^#[0-9a-fA-F]{6}$/.test(it.fill) ? it.fill : '#C9DDB8';
+    if (it.kind === 'area' && SURFACE_KEYS.includes(it.surface)) o.surface = it.surface;   // optional: how it looks in 3D (lawn, gravel ...)
+    if ((it.kind === 'area' || it.kind === 'bed') && it.shape === 'round') o.shape = 'round';
+    if (it.kind === 'building') Object.assign(o, { wallH: r3(num(it.wallH, 2.4, 0.5, 30)), roof: pick(it.roof, ROOFS), pitch: r3(num(it.pitch, 22, 0, 60)), ridge: pick(it.ridge, ['auto', 'w', 'h']),
+      wallColour: hexOr(it.wallColour, '#d9d2c3'), roofColour: hexOr(it.roofColour, '#6b6f75'), windows: it.windows !== false });
+    if (it.kind === 'greenhouse') Object.assign(o, { wallH: r3(num(it.wallH, 2, 0.5, 8)), frame: hexOr(it.frame, '#3d4a40') });
+    if (it.kind === 'pergola') Object.assign(o, { height: r3(num(it.height, 2.4, 1, 6)), cover: pick(it.cover, COVERS), colour: hexOr(it.colour, '#7a5a3a') });
     const place = str(it.place, 40).replace(/[^A-Za-z0-9_-]/g, ''); if (place) o.place = place;
     if (it.kind === 'rows') {
       const crop = CROPS[it.crop] ? it.crop : 'other', g = GUIDES[crop] || GUIDES.other;
-      Object.assign(o, { crop, variety: str(it.variety, 60), rowSpacing: r3(num(it.rowSpacing, g[4] || 0.75, 0.05, 50)), plantSpacing: r3(num(it.plantSpacing, g[3] || 0.3, 0.02, 50)), sow: day(it.sow), harvest: day(it.harvest) });
+      Object.assign(o, { crop, variety: str(it.variety, 60), ...lookOf(it), rowSpacing: r3(num(it.rowSpacing, g[4] || 0.75, 0.05, 50)), plantSpacing: r3(num(it.plantSpacing, g[3] || 0.3, 0.02, 50)), sow: day(it.sow), harvest: day(it.harvest) });
       o.remind = Number.isInteger(+it.remind) ? Math.min(60, Math.max(0, +it.remind)) : 3;
     }
   } else if (k.line) {
@@ -78,12 +97,15 @@ function cleanItem(it, ids, defs) {
     if (pts.length < 2) return null;
     o.pts = pts;
     if (it.kind === 'path') o.width = r3(num(it.width, 0.9, 0.1, 20));
-    if (it.kind === 'fence') o.height = r3(num(it.height, 1.2, 0.1, 6));
+    if (it.kind === 'path' && SURFACE_KEYS.includes(it.surface)) o.surface = it.surface;
+    if (it.kind === 'fence') { o.height = r3(num(it.height, 1.2, 0.1, 6)); if (FENCE_STYLES.includes(it.style) && it.style !== 'palings') o.style = it.style; if (/^#[0-9a-fA-F]{6}$/.test(it.colour || '')) o.colour = it.colour; }
+    if (it.kind === 'trellis') Object.assign(o, { height: r3(num(it.height, 1.8, 0.3, 5)), style: pick(it.style, TRELLIS_STYLES) });
+    if (it.kind === 'wall') Object.assign(o, { height: r3(num(it.height, 0.6, 0.1, 4)), material: pick(it.material, WALL_MATERIALS) });
   } else {
     Object.assign(o, { x: r3(num(it.x, 0)), y: r3(num(it.y, 0)) });
     if (it.kind === 'plant') {
       const crop = CROPS[it.crop] ? it.crop : 'other', c = CROPS[crop];
-      Object.assign(o, { crop, shape: SHAPES.includes(it.shape) ? it.shape : c[1], spread: r3(num(it.spread, c[2], 0.02, 40)), height: r3(num(it.height, c[3], 0.02, 40)), sow: day(it.sow), harvest: day(it.harvest), variety: str(it.variety, 60) });
+      Object.assign(o, { crop, shape: SHAPES.includes(it.shape) ? it.shape : c[1], spread: r3(num(it.spread, c[2], 0.02, 40)), height: r3(num(it.height, c[3], 0.02, 40)), sow: day(it.sow), harvest: day(it.harvest), variety: str(it.variety, 60), ...lookOf(it) });
       const link = str(it.link, 40).replace(/[^A-Za-z0-9_-]/g, ''); if (link) o.link = link;
       const after = str(it.after, 24).replace(/[^A-Za-z0-9_-]/g, ''); if (after) o.after = after;   // follows this planting in the same spot
       o.remind = Number.isInteger(+it.remind) ? Math.min(60, Math.max(0, +it.remind)) : 3;       // remind this many days before each event
@@ -94,6 +116,18 @@ function cleanItem(it, ids, defs) {
     if (it.kind === 'block') { if (!defs || !defs.has(it.def)) return null; o.def = it.def; o.rot = r3(num(it.rot, 0, -360, 360)); const place = str(it.place, 40).replace(/[^A-Za-z0-9_-]/g, ''); if (place) o.place = place; }
   }
   return o;
+}
+/* the member's own plant looks (made in the plant editor, plants/traits.js): kept in the plan as complete recipes, checked lightly here and
+   fully by the plant generator when drawn; a bad one is simply not used */
+const lookOf = it => (typeof it.look === 'string' && /^[a-z0-9]{4,12}$/.test(it.look) ? { look: it.look } : {});
+export function cleanVarieties(v) {
+  const out = {}; if (!v || typeof v !== 'object') return out;
+  for (const id of Object.keys(v).slice(0, 80)) {
+    const x = v[id]; if (!/^[a-z0-9]{4,12}$/.test(id) || !x || typeof x !== 'object' || !x.spec || typeof x.spec !== 'object') continue;
+    let spec; try { spec = JSON.parse(JSON.stringify(x.spec)); } catch { continue; } if (JSON.stringify(spec).length > 30000) continue;
+    out[id] = { id, name: str(x.name, 60) || 'My plant', base: str(x.base, 40), spec, mother: str(x.mother, 60), father: str(x.father, 60), gen: str(x.gen, 20), notes: str(x.notes, 600), made: /^\d{4}-\d{2}-\d{2}$/.test(x.made || '') ? x.made : '' };
+  }
+  return out;
 }
 export function cleanPlan(p) {
   if (!p || typeof p !== 'object' || p.format !== FORMAT) throw new Error('This is not an LT-Planner plan.');
@@ -118,6 +152,7 @@ export function cleanPlan(p) {
   // a block that (through other blocks) contains itself would never finish drawing: cut such links
   for (const k of Object.keys(out.blocks)) out.blocks[k].items = out.blocks[k].items.filter(it => it.kind !== 'block' || !reaches(out.blocks, it.def, k));
   out.items = (Array.isArray(p.items) ? p.items : []).slice(0, 5000).map(it => cleanItem(it, ids, defIds)).filter(Boolean);
+  { const vs = cleanVarieties(p.varieties); if (Object.keys(vs).length) out.varieties = vs; }
   return out;
 }
 /* does block `from` contain block `target`, directly or deeper? */
@@ -238,9 +273,21 @@ export function rowsLayout(it) {
   return { rows, cols, rowSpacing: rs, plantSpacing: ps, count: rows * cols };
 }
 /* which generated plant stands in for each crop until it has its own (by growing shape) */
-const PRESET_FOR = { tomato: 'tomato', corn: 'corn', pumpkin: 'pumpkinVine', squash: 'pattypan', melon: 'pumpkinVine', cucumber: 'pumpkinVine', fruittree: 'citrus', sunflower: 'sunflower' };
+const PRESET_FOR = { tomato: 'tomato', corn: 'corn', pumpkin: 'pumpkinVine', squash: 'pattypan', melon: 'pumpkinVine', cucumber: 'pumpkinVine', fruittree: 'citrus', sunflower: 'sunflower',
+  capsicum: 'capsicum', chilli: 'chilli', eggplant: 'eggplant', potato: 'potato', bean: 'bean', pea: 'pea', broadbean: 'bean', sweetpotato: 'pumpkinVine',
+  lettuce: 'lettuce', spinach: 'spinach', silverbeet: 'silverbeet', beetroot: 'beetroot', carrot: 'carrot', radish: 'radish', onion: 'onion', leek: 'leek', garlic: 'garlic',
+  cabbage: 'cabbage', broccoli: 'broccoli', cauliflower: 'cauliflower', kale: 'kale', basil: 'basil', parsley: 'parsley', herb: 'herbs', strawberry: 'strawberry' };
+/* a few varieties look different enough to get their own plant: red lettuce and cabbage, rainbow and red chard, Tuscan kale, red onion */
+const BY_VARIETY = [['lettuce', /red|oak|lollo|rouge|merlot|cos.*red/i, 'lettuceRed'], ['cabbage', /red|purple|ruby/i, 'cabbageRed'], ['silverbeet', /rainbow|bright lights|five colou?r|ruby|red|rhubarb|yellow/i, 'chardRainbow'],
+  ['kale', /tuscan|cavolo|nero|black|lacinato|dinosaur/i, 'kaleTuscan'], ['onion', /red|purple|spanish/i, 'onionRed']];
 const PRESET_BY_SHAPE = { upright: 'tomato', bush: 'tomato', vine: 'pumpkinVine', tree: 'appleTree', root: 'tomato', grass: 'corn' };
-export const presetFor = crop => PRESET_FOR[crop] || PRESET_BY_SHAPE[(CROPS[crop] || CROPS.other)[1]] || 'tomato';
+/* plants from the plant database name their own look (a preset in plants/plants.js; the plant database test checks each one exists) */
+export const presetFor = (crop, variety = '', own = '', varieties = null) => {
+  if (own && varieties && varieties[own]) return 'v_' + own;   // the member's own variety (carried in the plan)
+  if (variety) for (const [c, re, p] of BY_VARIETY) if (c === crop && re.test(variety)) return p;
+  if (PRESET_FOR[crop]) return PRESET_FOR[crop];
+  const look = PLANT_DB[crop] && PLANT_DB[crop].look; if (look) return look;
+  return PRESET_BY_SHAPE[(CROPS[crop] || CROPS.other)[1]] || 'tomato'; };
 const hashId = s => { let h = 7; for (const c of String(s)) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0; return Math.abs(h) || 1; };
 /* The rows of the plan as rules for the 3D field drawer (plants/field.js), in plan metres: x across, y becomes the ground's z.
    Rows that are not sown yet on `date`, or already harvested, are left out. `stage` is how far grown they are (0.15 to 1). */
@@ -249,7 +296,7 @@ export function fieldRules(plan, date) {
   const walk = items => items.forEach(it => { if (it.off || it.hidden) return; if (it.kind === 'block') walk(blockItemsAll(plan, it)); else if (it.kind === 'rows') {
     const g = growth(it, d); if (g === null) return;
     const L = rowsLayout(it), a = rad(it.rot || 0), cx = -it.w / 2, cy = -it.h / 2;
-    out.push({ id: it.id, species: presetFor(it.crop), crop: it.crop, stage: r3(g), x: r3(it.x + cx * Math.cos(a) - cy * Math.sin(a)), z: r3(it.y + cx * Math.sin(a) + cy * Math.cos(a)), angle: r3(it.rot || 0),
+    out.push({ id: it.id, species: presetFor(it.crop, it.variety, it.look, plan.varieties), crop: it.crop, stage: r3(g), x: r3(it.x + cx * Math.cos(a) - cy * Math.sin(a)), z: r3(it.y + cx * Math.sin(a) + cy * Math.cos(a)), angle: r3(it.rot || 0),
       rows: L.rows, cols: L.cols, rowSpacing: r3(L.rowSpacing), plantSpacing: r3(L.plantSpacing), jitter: r3(Math.min(0.1, L.plantSpacing * 0.1)), seed: hashId(it.id) });
   } });
   walk(plan.items);
@@ -429,6 +476,15 @@ const FAMILY_NAMES = { Solanaceae: 'tomato family', Cucurbitaceae: 'pumpkin fami
 export const familyOf = crop => (GUIDES[crop] || GUIDES.other)[1];
 export const familyName = f => FAMILY_NAMES[f] || f;
 const inBed = (bed, p) => { const [x, y] = rotPt([p.x - bed.x, p.y - bed.y], -bed.rot); return Math.abs(x) <= bed.w / 2 && Math.abs(y) <= bed.h / 2; };
+/* What is growing in a bed, greenhouse or bench on `date` (items = the flat list of plan items): [{ crop, name, variety, n }], most plants first */
+export function growingIn(items, bed, date) {
+  const by = new Map();
+  for (const it of items) {
+    if (it.kind !== 'plant' || it.off || it.hidden || growth(it, date) === null || !inBed(bed, it)) continue;
+    const key = it.crop + '|' + (it.variety || ''), e = by.get(key) || { crop: it.crop, name: (CROPS[it.crop] || CROPS.other)[0], variety: it.variety || '', n: 0 }; e.n++; by.set(key, e);
+  }
+  return [...by.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+}
 /* Everything planted in a bed, oldest first: [{ id, crop, family, variety, sow, harvest }]. */
 export function bedHistory(items, bed) {
   return items.filter(it => it.kind === 'plant' && !it.off && it.sow && inBed(bed, it))

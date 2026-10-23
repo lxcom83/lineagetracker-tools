@@ -1,6 +1,7 @@
 /* The top bar every tool shares: tree logo + "Lineage Tracker · <Tool>", a slot for the tool's own controls,
    the switcher (App, Print, Garden, website) and the account menu. */
 import { el, icon, rootUrl, CFG, signOut, TOOLS } from './core.js';
+import { aiMenuItem } from './ai.js';
 
 function popMenu(btn, build) {
   let menu = null;
@@ -40,6 +41,7 @@ export function topBar({ tool = '', slot = null, who = null } = {}) {
       el('div', { style: 'padding:6px 10px' }, [el('b', { text: who.alias }), el('small', { text: who.offline ? 'Working offline. Membership last checked ' + new Date(who.checked).toLocaleDateString() : 'Signed in' })]),
       el('div', { class: 'sep' }),
       el('a', { href: CFG.SITE + '/account.html', role: 'menuitem' }, [icon('settings'), el('span', { text: 'Your account (website)' })]),
+      aiMenuItem(close),
       el('button', { type: 'button', role: 'menuitem', onclick: async () => { close(); await signOut(); location.href = rootUrl(''); } }, [icon('back'), el('span', {}, ['Sign out', el('small', { text: 'Also forgets the 30-day pass on this device' })])]),
     ]);
     kids.push(acc);

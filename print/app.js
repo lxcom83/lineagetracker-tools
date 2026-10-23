@@ -12,6 +12,8 @@ import { takeHandoff, hasBrand } from '../kit/brand.js';
 import { designView, setLogo, LABEL_CSS } from './editor.js';
 import { recordsView } from './records.js';
 import { printView } from './printing.js';
+import { scanDialog, askAI, parseReplyJSON } from '../kit/ai.js';
+import { labelPrompt, labelFromReply } from './scan.js';
 
 const app = document.getElementById('app');
 const K = { doc: 'ltprint_doc', data: 'ltprint_data', prefs: 'ltprint_prefs', lib: 'ltprint_lib', where: 'ltprint_where' };
@@ -170,6 +172,7 @@ function build(g) {
     menu = el('div', { class: 'kmenu', role: 'menu', style: 'left:0;right:auto' }, [
       mi('plus', 'New design', 'Blank, or from a starter', newDialog),
       mi('grid', 'Template library', 'Seed packets, ID tags, product labels, invoices', libraryDialog),
+      mi('image', 'Scan a label (AI)…', 'Photo of a label you like: copies its layout', scanLabel),
       mi('folder', 'Open…', 'From this device, Google Drive or Dropbox', () => openDialog()),
       mi('save', 'Save', S.file ? 'To ' + whereName(S.file.where) : 'Choose where', () => quickSave()),
       mi('save', 'Save as…', 'Another name or place', () => saveDialog()),
@@ -244,6 +247,24 @@ function newDialog() {
   const d = dialog('New design', body, { wide: true });
 }
 
+
+/* ---------- Scan a label (AI helper, the member's own key) ---------- */
+const smallerPhoto = (url, max = 900) => new Promise(res => { const i = new Image(); i.onload = () => { const k = Math.min(1, max / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); const u = c.toDataURL('image/jpeg', 0.7); res(u.length < MAX_ASSET * 1.3 ? u : null); }; i.onerror = () => res(null); i.src = url; });
+function scanLabel() {
+  const kindSel = el('select', {}, Object.entries(KINDS).map(([k, v]) => el('option', { value: k, text: v.name, selected: k === S.t.kind })));
+  scanDialog({ title: 'Scan a label', unit: 'mm', labels: ['Width', 'Height'], start: [Math.round(S.t.w) || 60, Math.round(S.t.h) || 30], min: 10, max: 600, step: 0.5, consentKind: 'label', goText: 'Lay it out',
+    consentText: 'LT-Print sends your photo of the label so the AI can find its text, pictures and codes and measure where they sit.',
+    intro: 'Take a photo of a label you like, straight on if you can, and give its real size. LT-Print lays out the same kind of design: text boxes (with your record fields where the words change), boxes for your own pictures, QR codes and barcodes. It replaces the design you have open, so save that first if you want to keep it.',
+    extra: el('label', { class: 'fld' }, [el('span', { text: 'Records it is for' }), kindSel]),
+    onGo: async (photo, w, h) => {
+      const kind = kindSel.value, columns = kind === 'table' ? (S.data?.columns || []) : [];
+      const reply = await askAI({ images: [photo], text: labelPrompt(w, h, kind, columns), maxTokens: 4000 });
+      const r = labelFromReply(parseReplyJSON(reply), { w, h, kind, columns, name: 'Scanned label', photo: await smallerPhoto(photo.url) });
+      if (!r.count) throw new Error('No layout came back from that photo. Try a sharper photo, straight on, with the whole label in view.');
+      setDoc(r.template, null);
+      return 'Laid out ' + r.count + ' items' + (r.fields ? ', ' + r.fields + ' with record fields' : '') + (r.pictures ? ', ' + r.pictures + (r.pictures === 1 ? ' picture box' : ' picture boxes') + ' for your own pictures' : '') + '. The original photo is in the feature tree, switched off, to compare.';
+    } });
+}
 
 /* ---------- Template library ---------- */
 function libraryDialog() {

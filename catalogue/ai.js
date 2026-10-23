@@ -2,10 +2,11 @@
    The key stays on this device. The browser talks straight to Anthropic; nothing passes through us.
    Only item names and codes are sent (no prices, stock or seller details), plus the message or picture itself. */
 import { store } from '../kit/core.js';
+import { openKeyFor } from '../kit/ai.js';
 
 const KEY = 'lt_ai_key', MODEL = 'claude-haiku-4-5-20251001';
 const FIELDS = ['customer', 'email', 'phone', 'street', 'suburb', 'state', 'postcode', 'country', 'lines'];
-export const getAiKey = () => { const k = store.get(KEY, ''); return typeof k === 'string' ? k : ''; };
+export const getAiKey = () => { const k = store.get(KEY, ''); if (typeof k === 'string' && k) return k; return openKeyFor('claude'); };   // falls back to the key set in the shared AI helper (Claude)
 export const setAiKey = k => { k = String(k || '').trim(); if (!/^[A-Za-z0-9_-]{20,300}$/.test(k)) return false; return store.set(KEY, k); };
 export const clearAiKey = () => store.del(KEY);
 
