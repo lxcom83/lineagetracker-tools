@@ -61,16 +61,15 @@ export function farm() {
     rows('grain', 'Grain corn', 'corn', 210, 160, 70, 40, 0.9, 0.3, { sow: '2026-10-25', harvest: '2027-02-25' }),
     rows('pumpk', 'Pumpkins', 'pumpkin', 95, 205, 150, 40, 1.8, 1.6, { sow: '2026-10-28', harvest: '2027-04-10' }),
     rows('tomf', 'Field tomatoes', 'tomato', 210, 205, 70, 40, 1.2, 0.6, { sow: '2026-10-12', harvest: '2027-03-15' }),
-    rows('potato', 'Potatoes', 'potato', 450, 215, 70, 30, 0.75, 0.3, { sow: '2026-09-25', harvest: '2027-02-05' }),
-    rows('beans', 'Beans', 'bean', 450, 255, 70, 30, 0.8, 0.1, { sow: '2026-11-05', harvest: '2027-02-12' }),
-    rows('capsi', 'Capsicum', 'capsicum', 450, 295, 70, 30, 0.6, 0.45, { sow: '2026-10-25', harvest: '2027-03-30' }),
+    rows('potato', 'Potatoes', 'potato', 468, 215, 56, 30, 0.75, 0.3, { sow: '2026-09-25', harvest: '2027-02-05' }),
+    rows('beans', 'Beans', 'bean', 468, 255, 56, 30, 0.8, 0.1, { sow: '2026-11-05', harvest: '2027-02-12' }),
+    rows('capsi', 'Capsicum', 'capsicum', 468, 295, 56, 30, 0.6, 0.45, { sow: '2026-10-25', harvest: '2027-03-30' }),
     rows('straw', 'Strawberries', 'strawberry', 465, 335, 50, 20, 0.8, 0.4, { sow: '2026-05-10', harvest: '2027-04-30' }));
 
   // ---- vineyard and trellis ----
   for (let i = 0; i < 6; i++) {
     const y = 220 + i * 6;
-    add(line('vt' + i, 'trellis', 'Vine trellis ' + (i + 1), [[270, y], [402, y]], { height: 2.1, style: 'wire' }),
-      rows('vine' + i, 'Grapes row ' + (i + 1), 'grape', 336, y, 132, 0.5, 2, 2, { variety: 'Shiraz' }));
+    add(rows('vine' + i, 'Grapes row ' + (i + 1), 'grape', 336, y, 132, 0.5, 2, 2, { variety: 'Shiraz' }));
   }
   add(line('ct', 'trellis', 'Cucumber trellis', [[190, 245], [190, 295]], { height: 1.9, style: 'mesh' }), rows('cuc', 'Cucumbers on the trellis', 'cucumber', 191.5, 270, 50, 0.5, 1, 0.5, { rot: 90, sow: '2026-10-30', harvest: '2027-02-20' }));
 

@@ -70,6 +70,8 @@ function polyInside(poly, x, z){
 // small stable hash -> 0..1, so a plant keeps its jitter and size from frame to frame
 function h01(seed, a, b){ let h = (seed|0) ^ Math.imul(a|0, 374761393) ^ Math.imul(b|0, 668265263); h = Math.imul(h ^ (h>>>13), 1274126177); h ^= h>>>16; return (h>>>0)/4294967296; }
 
+const EMPTY = new Map();
+const TRAINED = new Set(['grape','passionfruit','kiwifruit']);   // climbers on posts and wire: their arms must follow the row
 export class PlantField {
   // species: { id: { h, r, tris:[full, reduced, proxy, marker] } }  h = height m, r = canopy radius m
   constructor({quality='low', species={}, blocks=[]}={}){
@@ -106,7 +108,7 @@ export class PlantField {
     const stats = { considered:0, culled:0, full:0, reduced:0, proxy:0, marker:0, represented:0, demoted:0, thinned:0, tris:0, ms:0, quality:this.quality };
     let rmax = 0; for(const k in this.species) rmax=Math.max(rmax, this.species[k].r);
     const box = polyBox(view.poly), margin = rmax*1.2;
-    const tmp=[0,0];
+    const tmp=[0,0], T=[Q.p0,Q.p1,Q.p2];
     for(const b of this.blocks){
       const sp = this.species[b.species]; const total=b.rows*b.cols;
       stats.considered += total;
@@ -132,9 +134,15 @@ export class PlantField {
         const vary = (1+(h01(b.seed+7,r,c)-0.5)*2*b.sizeVar)*b.scale;
         const px = baseSize*vary*k*(s>1?s:1);
         if(s===1 && px<PMIN) return;
-        const rot = h01(b.seed+3,r,c)*6.2832;
-        const L = s>1 ? 3 : px>=Q.p0?0 : px>=Q.p1?1 : px>=Q.p2?2 : 3;
-        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), px, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
+        const rot = TRAINED.has(b.species) ? -a : h01(b.seed+3,r,c)*6.2832;   // trained vines run along their row; everything else turns at random
+        let L = s>1 ? 3 : px>=Q.p0?0 : px>=Q.p1?1 : px>=Q.p2?2 : 3, stay = false;
+        if(s===1){   // a plant keeps its detail level until it is clearly past the change point, so moving the camera does not make trees flicker between shapes
+          const idx = r*b.cols+c, pm = b._prev || EMPTY, pl = pm.has(idx) ? pm.get(idx) : 3;
+          if(pl<L){ if(px >= T[pl]*0.8){ L = pl; stay = true; } }
+          else if(pl>L){ if(px < T[pl-1]*1.25){ L = pl; stay = true; } }
+          else stay = pl<3;
+        }
+        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), px, key:stay?px*1.25:px, blk:s===1?b:null, idx:s===1?r*b.cols+c:-1, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
       };
       const leaf=(rA,rB,cA,cB)=>{      // plants rA..rB, cA..cB inclusive, all about the same distance away
         const mr=(rA+rB)/2, mc=(cA+cB)/2; this.pos(b,mr,mc,tmp);
@@ -166,7 +174,7 @@ export class PlantField {
     const caps=[Q.maxFull,Q.maxReduced,Q.maxProxy,Q.maxMarker];
     for(let L=0;L<3;L++){
       const list=cand[L]; if(!list.length) continue;
-      list.sort((a,b)=>b.px-a.px);
+      list.sort((a,b)=>b.key-a.key);
       const keep=[];
       for(const e of list){ const cost=this.species[e.sp].tris[L];
         if(keep.length<caps[L] && triLeft>=cost){ keep.push(e); triLeft-=cost; }
@@ -178,6 +186,10 @@ export class PlantField {
       const f=Math.sqrt(list.length/keepN); for(const e of out){ e.sc*=f; e.cover=Math.round(e.cover*f*f); }   // survivors grow a little so the field has no holes
       stats.thinned += list.length-keepN; cand[3]=out;
     }
+    // remember the level each plant ended up drawn at (after the limits), so next frame's hold matches what was on screen
+    const fresh = new Map();
+    for(let L=0;L<3;L++) for(const e of cand[L]){ if(!e.blk) continue; let m=fresh.get(e.blk); if(!m) fresh.set(e.blk, m=new Map()); m.set(e.idx, L); }
+    for(const b of this.blocks){ const nb=fresh.get(b)||EMPTY; if(b._prev!==EMPTY && b._prev!==undefined || nb!==EMPTY) b._prev=nb; }
     // ---- output: one packed array per species and level ----
     const groups=[]; const names=['full','reduced','proxy','marker'];
     for(let L=0;L<4;L++){

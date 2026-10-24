@@ -597,14 +597,14 @@ export function extent(spec, stage=1){
 // Under 60 triangles. Same colours as the real plant so a field does not change colour as you zoom.
 export function proxyGeometry(spec, stage=1){
   const M=new Mesh(PROFILES.lod1), e=extent(spec,stage), lc=mix(hex(spec.leaf.color),hex(spec.leaf.color2),0.5), bark=hex(spec.bark||'#6b4a2b');
-  const blob=(cy,ry,rx)=>{ const S=7,T=4,rows=[]; const top=M.vert(V(0,cy+ry,0),mix(lc,[1,1,0.7],0.2));
-    for(let t=1;t<=T;t++){ const a=t/T*Math.PI*0.95, row=[]; for(let s=0;s<S;s++){ const b=s/S*Math.PI*2; row.push(M.vert(V(Math.cos(b)*Math.sin(a)*rx,cy+Math.cos(a)*ry,Math.sin(b)*Math.sin(a)*rx),mix(lc,[0.05,0.15,0.05],t/T*0.45))); } rows.push(row); }
+  const blob=(cy,ry,rx,rz=rx)=>{ const S=7,T=4,rows=[]; const top=M.vert(V(0,cy+ry,0),mix(lc,[1,1,0.7],0.2));
+    for(let t=1;t<=T;t++){ const a=t/T*Math.PI*0.95, row=[]; for(let s=0;s<S;s++){ const b=s/S*Math.PI*2; row.push(M.vert(V(Math.cos(b)*Math.sin(a)*rx,cy+Math.cos(a)*ry,Math.sin(b)*Math.sin(a)*rz),mix(lc,[0.05,0.15,0.05],t/T*0.45))); } rows.push(row); }
     for(let s=0;s<S;s++) M.tri(top,rows[0][(s+1)%S],rows[0][s]);
     for(let t=0;t<T-1;t++) for(let s=0;s<S;s++){ const n=(s+1)%S; M.tri(rows[t][s],rows[t][n],rows[t+1][s]); M.tri(rows[t][n],rows[t+1][n],rows[t+1][s]); } };
   if(spec.kind==='tree'){ const th=e.h*(spec.trunkFrac||0.4); M.tube([V(0,0,0),V(0,th,0)],spec.trunk*(0.2+0.8*Math.max(0.05,stage)),spec.trunk*0.5*(0.2+0.8*Math.max(0.05,stage)),bark,4); blob(th+(e.h-th)*0.5,(e.h-th)*0.55,e.r); }
   else if(spec.kind==='palm'){ const th=e.h*0.85; M.tube([V(0,0,0),V(0,th,0)],spec.trunk*0.8,spec.trunk*0.5,bark,4); blob(th,e.h*0.25,e.r); }
   else if(spec.kind==='banana'){ M.tube([V(0,0,0),V(0,e.h*0.6,0)],(spec.trunk||0.12),(spec.trunk||0.12)*0.8,mix(bark,lc,0.5),4); blob(e.h*0.68,e.h*0.33,e.r); }
-  else if(spec.kind==='climber'){ const H=spec.height||1.8; M.tube([V(0,0,0),V(0,H,0)],0.04,0.03,bark,4); blob(H+(e.h-H)*0.4,Math.max(0.3,(e.h-H)*0.6+0.25),e.r); }
+  else if(spec.kind==='climber'){ const H=spec.height||1.8; M.tube([V(0,0,0),V(0,H,0)],0.04,0.03,bark,4); blob(H+(e.h-H)*0.4,Math.max(0.3,(e.h-H)*0.6+0.25),e.r,spec.train==='canopy'?e.r:Math.min(e.r,0.45)); }   // a trained vine is a thin wall along its wire, not a ball
   else if(spec.kind==='leafy') leafyProxy(M,spec,e,lc);
   else if(spec.kind==='vine'||spec.kind==='rosette') blob(e.h*0.35,e.h*0.5,e.r);
   else blob(e.h*0.5,e.h*0.5,e.r);

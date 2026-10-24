@@ -28,6 +28,10 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const cv = el('canvas', { class: 'v3-canvas', 'aria-label': '3D view of the plan. Drag to turn, right-drag or two fingers to move, wheel or pinch to zoom.', tabindex: '0' }), info = el('span', { class: 'small muted', role: 'status' });
   const qSel = el('select', { 'aria-label': 'Quality' }, [['low', 'Low (tablet)'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra (gaming PC)']].map(([v, l]) => el('option', { value: v, text: l })));
   qSel.value = F.getQuality();
+  const RANGES = { near: 120, mid: 300, far: 700, all: 0 };   // how far from the camera plants and ground are built (metres); 0 = as far as can be seen
+  let rangeKey = 'mid'; try { const sv = localStorage.getItem('ltplanner.range3d'); if (sv in RANGES) rangeKey = sv; } catch {}
+  const rangeSel = el('select', { 'aria-label': 'View distance', title: 'Only what is near you is built, like a game. Nearer is smoother on a tablet; the haze hides the edge.' }, [['near', 'Near (120 m)'], ['mid', 'Medium (300 m)'], ['far', 'Far (700 m)'], ['all', 'Everything']].map(([v, l]) => el('option', { value: v, text: l })));
+  rangeSel.value = rangeKey;
   const projSel = el('select', { 'aria-label': 'Projection' }, [['persp', 'Perspective'], ['ortho', 'Flat (no perspective)']].map(([v, l]) => el('option', { value: v, text: l })));
   const hourIn = el('input', { type: 'range', min: 6, max: 19, step: 0.5, value: 14, 'aria-label': 'Time of day' });
   const exSel = el('select', { 'aria-label': 'Slopes: exaggerate the ground heights to see gentle slopes', title: 'Gentle slopes are hard to see at real size. This stretches the ground heights only (beds, plants and fences keep their real size) so you can see which way the ground falls.' }, [1, 2, 3, 5].map(v => el('option', { value: String(v), text: v === 1 ? 'Real size' : 'Exaggerate ×' + v }))); exSel.value = String(ex);
@@ -47,7 +51,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const side = el('aside', { class: 'v3-side', 'aria-label': 'View options', hidden: !panelOpen }, [
     sec('Find', [findIn, findMsg]),
     sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each'])]),
-    sec('View', [el('label', { class: 'small' }, ['Quality ', qSel]), el('label', { class: 'small' }, ['Projection ', projSel]), exLbl, el('label', { class: 'small' }, ['Sun ', hourIn])]),
+    sec('View', [el('label', { class: 'small' }, ['Quality ', qSel]), el('label', { class: 'small' }, ['View distance ', rangeSel]), el('label', { class: 'small' }, ['Projection ', projSel]), exLbl, el('label', { class: 'small' }, ['Sun ', hourIn])]),
     info, help]);
   const homeB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Home view (H)', 'aria-label': 'Home view' }, [navIcon('home')]);
   const fitB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Fit the whole site (F)', 'aria-label': 'Fit the whole site' }, [icon('fit')]);
@@ -58,7 +62,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const wrap = el('div', { class: 'v3-wrap', role: 'dialog', 'aria-label': '3D view' }, [bar, stage]);
   document.body.append(wrap);
 
-  const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true }); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); r.autoClear = false;
+  const r = new THREE.WebGLRenderer({ canvas: cv, antialias: F.getQuality() !== 'low' }); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); r.autoClear = false;
   const scene = new THREE.Scene();
   { const c = document.createElement('canvas'); c.width = 4; c.height = 256; const x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#6f9fcf'); gr.addColorStop(0.55, '#a9c6de'); gr.addColorStop(1, '#dfe7e4'); x.fillStyle = gr; x.fillRect(0, 0, 4, 256);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t; }   // a soft sky: deeper blue above, hazy at the horizon
@@ -70,7 +74,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   // surfaces drawn on the device (planner/surfaces.js): one texture and one material per kind, freed on close
   const texs = new Map(), surfMats = new Map();
   const tex = k => { let t = texs.get(k); if (!t) { t = new THREE.CanvasTexture(SF.make(k)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texs.set(k, t); } return t; };
-  const surf = k => { let m = surfMats.get(k); if (!m) { m = new THREE.MeshStandardMaterial({ map: tex(k), roughness: k === 'pavers' || k === 'decking' ? 0.8 : 0.97, side: THREE.DoubleSide }); surfMats.set(k, m); } return m; };
+  const surf = k => { let m = surfMats.get(k); if (!m) { m = new THREE.MeshStandardMaterial({ map: tex(k), roughness: k === 'pavers' || k === 'decking' ? 0.8 : 0.97, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }); surfMats.set(k, m); } return m; };
   const planarUV = (geo, metres) => { const P = geo.getAttribute('position'), uv = new Float32Array(P.count * 2); for (let i = 0; i < P.count; i++) { uv[i * 2] = P.getX(i) / metres; uv[i * 2 + 1] = P.getZ(i) / metres; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
   const scaleUV = (geo, su, sv) => { const U = geo.getAttribute('uv'); for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * su, U.getY(i) * sv); U.needsUpdate = true; return geo; };
   // a grey pattern tinted by a colour (roof sheets, painted pickets), or a see-through one (lattice, mesh): one material per pattern and colour
@@ -311,6 +315,38 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     else if (it.kind === 'greenhouse') greenhouse(it);
     else if (it.kind === 'pergola') pergola(it);
   }
+  /* Fences, posts, wires, trellis and walls are thousands of little boxes. Drawing each one on its own is what made big plans hot (7,000+ draw calls on the farm),
+     so every plain mesh that shares a material is joined into a few big ones, one per 80 m square of the plan so off-screen parts are still skipped. */
+  const mergeStatic = grp => {
+    const buckets = new Map(), old = [];
+    grp.updateMatrixWorld(true);
+    grp.traverse(o => {
+      if (!o.isMesh || o.userData.keep || !o.geometry || !o.geometry.isBufferGeometry || Array.isArray(o.material)) return;
+      const g = o.geometry, at = g.attributes; if (!at.position || !at.normal || !at.uv || Object.keys(at).length !== 3) return;
+      if (!g.boundingBox) g.computeBoundingBox(); const ctr = g.boundingBox.getCenter(new THREE.Vector3()).applyMatrix4(o.matrixWorld);   // where the piece really sits on the plan, whatever group it is in
+      const key = o.material.uuid + '|' + (o.userData.glass ? 1 : 0) + '|' + o.renderOrder + '|' + Math.floor(ctr.x / 80) + '|' + Math.floor(ctr.z / 80);
+      let b = buckets.get(key); if (!b) buckets.set(key, b = { mat: o.material, glass: !!o.userData.glass, ro: o.renderOrder, list: [] }); b.list.push(o); old.push(o);
+    });
+    let made = 0;
+    for (const b of buckets.values()) {
+      if (b.list.length < 2) continue;
+      let nv = 0, ni = 0; for (const o of b.list) { nv += o.geometry.attributes.position.count; ni += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count; }
+      if (nv > 4000000) continue;
+      const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), U = new Float32Array(nv * 2), I = new Uint32Array(ni); let vo = 0, io = 0;
+      const v = new THREE.Vector3(), nm = new THREE.Matrix3();
+      for (const o of b.list) {
+        const g = o.geometry, ps = g.attributes.position, ns = g.attributes.normal, us = g.attributes.uv; nm.getNormalMatrix(o.matrixWorld);
+        for (let i = 0; i < ps.count; i++) { const k3 = (vo + i) * 3; v.fromBufferAttribute(ps, i).applyMatrix4(o.matrixWorld); P[k3] = v.x; P[k3 + 1] = v.y; P[k3 + 2] = v.z; v.fromBufferAttribute(ns, i).applyMatrix3(nm).normalize(); N[k3] = v.x; N[k3 + 1] = v.y; N[k3 + 2] = v.z; U[(vo + i) * 2] = us.getX(i); U[(vo + i) * 2 + 1] = us.getY(i); }
+        if (g.index) for (let i = 0; i < g.index.count; i++) I[io++] = g.index.getX(i) + vo; else for (let i = 0; i < ps.count; i++) I[io++] = vo + i;
+        vo += ps.count;
+      }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(U, 2)); geo.setIndex(new THREE.BufferAttribute(I, 1));
+      const m = new THREE.Mesh(geo, b.mat); m.userData.glass = b.glass; m.renderOrder = b.ro; grp.add(m); made++;
+      for (const o of b.list) { if (o.parent) o.parent.remove(o); o.geometry.dispose(); }
+    }
+    return made;
+  };
+  const mergedMeshes = mergeStatic(solids);
   groundMesh.receiveShadow = true; solids.traverse(o => { if (o.isMesh) { o.castShadow = !o.userData.glass; o.receiveShadow = !o.userData.glass; } });
   const setShadows = q => { const on = shadowsFor(q); if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; r.shadowMap.type = THREE.PCFSoftShadowMap; mats.forEach(m => { m.needsUpdate = true; }); surfMats.forEach(m => { m.needsUpdate = true; }); mat.needsUpdate = true; groundMesh.material.needsUpdate = true; } sun.castShadow = on; return on; };
   // plants that stand inside a raised bed sit on its soil, not on the ground under it
@@ -405,7 +441,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const diag = Math.hypot(site.w, site.h), fitDist = () => { const a = Math.max(0.3, cv.clientWidth / Math.max(1, cv.clientHeight)); return (diag / 2) / Math.tan(FOV / 2 * D2R) / Math.min(1, a) * 1.08 + 1; };
   const HOME = () => ({ tx: site.w / 2, tz: site.h / 2, yaw: bearingYaw(210), pitch: 38, dist: fitDist() });
   const st = Object.assign(HOME(), keepView || {}); let anim = null;
-  let raf = 0, dirty = true, cam = persp;
+  let raf = 0, dirty = true, cam = persp, lastDraw = 0, sharpBusy = false;
   const offset = () => { const y = st.yaw * D2R, p = st.pitch * D2R; return new THREE.Vector3(Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p)); };
   function placeCamera(w, h) {
     const a = w / h, ty = gy(st.tx, st.tz), tgt = new THREE.Vector3(st.tx, ty, st.tz), o = offset();
@@ -467,26 +503,32 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       if (!reduceMotion && !glowTimer) glowTimer = setTimeout(() => { glowTimer = 0; if (glowMats.length) schedule(); }, 80);
       if (!reduceMotion) dirty = true;
     }
-    if (!dirty) return; dirty = false;
+    if (!dirty) return;
+    if (qSel.value === 'low' && performance.now() - lastDraw < 25 && !sharpBusy) { raf = requestAnimationFrame(frame); return; }   // Low draws at most about 30 times a second: cooler and kinder to a tablet battery
+    lastDraw = performance.now(); dirty = false;
+    if (!sharpBusy) { const want = qSel.value === 'low' ? 1 : Math.min(2, window.devicePixelRatio || 1); if (r.getPixelRatio() !== want) r.setPixelRatio(want); }   // Low draws at plain screen resolution
     const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) { schedule(); return; }
     r.setSize(w, h, false); const tgt = placeCamera(w, h);
+    const rangeNow = d => RANGES[rangeSel.value] ? Math.max(RANGES[rangeSel.value], d * 2.2) : Math.max(300, d * 4), tgtDistance = () => st.dist;
     const view = projSel.value === 'ortho' && st.pitch > 89 ? F.orthoView({ cx: st.tx, cz: st.tz, halfH: st.dist * Math.tan(FOV / 2 * D2R), aspect: w / h, heightPx: h })
-      : F.perspView({ eye: [cam.position.x, cam.position.y, cam.position.z].map((v, i) => projSel.value === 'ortho' ? [tgt.x, tgt.y, tgt.z][i] + offset().toArray()[i] * st.dist : v), target: [tgt.x, tgt.y, tgt.z], fovDeg: FOV, aspect: w / h, heightPx: h, maxDist: Math.max(300, st.dist * 4) });
+      : F.perspView({ eye: [cam.position.x, cam.position.y, cam.position.z].map((v, i) => projSel.value === 'ortho' ? [tgt.x, tgt.y, tgt.z][i] + offset().toArray()[i] * st.dist : v), target: [tgt.x, tgt.y, tgt.z], fovDeg: FOV, aspect: w / h, heightPx: h, maxDist: rangeNow(tgtDistance()) });
     // sun from date, time and latitude (model.js)
     const hour = +hourIn.value, s = M.sunAt(date, hour, site.lat), az = (s.az + N) * D2R, el_ = Math.max(4, s.el) * D2R, warm = clamp(s.el / 40, 0, 1);
     sun.position.set(st.tx + Math.sin(az) * Math.cos(el_) * 400, Math.sin(el_) * 400 + tgt.y, st.tz - Math.cos(az) * Math.cos(el_) * 400); sun.target.position.set(st.tx, tgt.y, st.tz); scene.add(sun.target);
     sun.color.set('#ffae66').lerp(new THREE.Color('#fff4e0'), warm); sun.intensity = s.el <= 0 ? 0.25 : 0.9 + 1.4 * warm; sky.intensity = 0.45 + 0.3 * warm;   // low sun: warmer and dimmer
     if (sun.castShadow) { const half = clamp(st.dist * 0.9, 12, 220), sc = sun.shadow.camera; sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
     scene.fog.near = st.dist * 1.1 + diag * 0.7; scene.fog.far = scene.fog.near + diag * 2.5 + 500;
+    if (projSel.value === 'ortho') { scene.fog.near = 1e6; scene.fog.far = 2e6; }   // flat view looks from far away: no haze
+    else if (RANGES[rangeSel.value]) { const rg = rangeNow(st.dist); scene.fog.far = Math.min(scene.fog.far, rg * 1.05); scene.fog.near = Math.min(scene.fog.near, rg * 0.55); }   // the haze hides where building stops
     const sel = field.select(view); fv.apply(sel);
-    r.setScissorTest(false); r.setViewport(0, 0, w, h); r.clear(); r.render(scene, cam);
+    r.setScissorTest(false); r.setViewport(0, 0, w, h); r.clear(); r.render(scene, cam); const drawCalls = r.info.render.calls, sceneObjs = scene.children.length;
     // the view cube looks the same way as the camera
     cube.children.forEach(c => { if (c.isSprite) c.visible = st.pitch > 60; });   // the compass letters only help when looking down
     const o = offset(); cubeCam.position.set(o.x * 3, o.y * 3, o.z * 3); cubeCam.up.copy(cam.up); cubeCam.lookAt(0, 0, 0); cubeCam.updateMatrixWorld();
     const R = cubeRect(); r.setScissorTest(true); r.setScissor(R.x, h - R.y - R.s, R.s, R.s); r.setViewport(R.x, h - R.y - R.s, R.s, R.s); r.clearDepth(); r.render(cubeScene, cubeCam); r.setScissorTest(false);
     if (showLabels) { const cp = cam.position; labels.sort((a, b) => ((a.x - cp.x) ** 2 + (a.y - cp.y) ** 2 + (a.z - cp.z) ** 2) - ((b.x - cp.x) ** 2 + (b.y - cp.y) ** 2 + (b.z - cp.z) ** 2)); placeLabels(w, h); }
     const t = sel.stats; info.textContent = field.count().toLocaleString() + ' plants · drawn ' + t.drawn.toLocaleString() + ' (' + t.full + ' full, ' + t.reduced + ' reduced, ' + t.proxy + ' simple, ' + t.marker + ' flat) · ' + Math.round(t.tris).toLocaleString() + ' triangles';
-    window.__v3 = { glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
+    window.__v3scene = scene; window.__v3 = { merged: mergedMeshes, calls: drawCalls, objs: sceneObjs, glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
       beds: beds.map(b => ({ id: b.id, top: b.__top })), under: (x, z) => gy(x, z), plantY, view: k => ({ home, fit, top: topView })[k](), look: o => flyTo(o, 1), dir: (x, y, z) => goToCubeDir(new THREE.Vector3(x, y, z)) };
     if (anim) schedule();
   }
@@ -548,7 +590,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const needNames = () => { if ((growCb.checked || cntCb.checked) && !labCb.checked) { labCb.checked = true; labCb.dispatchEvent(new Event('change')); } };   // the text sits under the names, so ticking it turns names on
   growCb.addEventListener('change', () => { if (growCb.checked) cntCb.checked = false; setSubs(); needNames(); }); cntCb.addEventListener('change', () => { if (cntCb.checked) growCb.checked = false; setSubs(); needNames(); });
   const shot = async sharp => {
-    const old = { pr: r.getPixelRatio(), sh: r.shadowMap.enabled }, wasLab = showLabels;
+    sharpBusy = true; const old = { pr: r.getPixelRatio(), sh: r.shadowMap.enabled }, wasLab = showLabels;
     const w = cv.clientWidth, h = cv.clientHeight, want = sharp ? Math.min(3, 4096 / Math.max(w, h)) : Math.min(2, window.devicePixelRatio || 1);
     try {
       if (sharp) { fv.shadows = setShadows('ultra'); }
@@ -557,14 +599,15 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       const c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height; c.getContext('2d').drawImage(cv, 0, 0);
       const k = c.width / w, out = wasLab ? labels.filter(L => L.shown && (L.tag.style.display !== 'none')).map(L => ({ x: L.px * k, y: L.py * k, text: L.text, sub: L.sub && !L.sub.hidden ? L.sub.textContent : '', glow: glowSet.has(L.id) })) : [];
       return { canvas: c, labels: out, scale: k };
-    } finally { r.setPixelRatio(old.pr); fv.shadows = setShadows(qSel.value); dirty = true; schedule(); }
+    } finally { sharpBusy = false; r.setPixelRatio(old.pr); fv.shadows = setShadows(qSel.value); dirty = true; schedule(); }
   };
   shareB.addEventListener('click', () => openShare({ title: plan.name || 'My plan', date: new Date(date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }), render: shot }));
   setGlow(findStart ? matches(findStart) : glow); setSubs(); let savedPanel = null; try { savedPanel = localStorage.getItem('ltplanner.v3panel'); } catch {} if (window.innerWidth < 900 && panelOpen && !savedPanel) setPanel(false);
   qSel.addEventListener('change', () => { F.setQuality(qSel.value); field.setQuality(qSel.value); fv.shadows = setShadows(qSel.value); fv.setDetail(1, '_'); fv.setDetail(1, qSel.value); schedule(); });
   labCb.addEventListener('change', () => { showLabels = labCb.checked; labelsEl.hidden = !showLabels; try { localStorage.setItem('ltplanner.labels3d', showLabels ? 'on' : 'off'); } catch {} schedule(); });
   projSel.addEventListener('change', schedule); hourIn.addEventListener('input', schedule); addEventListener('resize', schedule);
-  const close = () => { cancelAnimationFrame(raf); clearTimeout(glowTimer); glowMats.length = 0; slabMat.dispose(); beamMat.dispose(); removeEventListener('resize', schedule); document.removeEventListener('keydown', key, true); fv.dispose(); mats.forEach(m => m.dispose()); mat.dispose(); surfMats.forEach(m => m.dispose()); texs.forEach(t => t.dispose()); groundMesh.material.dispose();
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); clearTimeout(glowTimer); glowMats.length = 0; slabMat.dispose(); beamMat.dispose(); removeEventListener('resize', schedule); document.removeEventListener('keydown', key, true); fv.dispose(); mats.forEach(m => m.dispose()); mat.dispose(); surfMats.forEach(m => m.dispose()); texs.forEach(t => t.dispose()); groundMesh.material.dispose();
     cubeMats.forEach(m => { m.map.dispose(); m.dispose(); }); cube.traverse(o => { if (o.isSprite) { o.material.map.dispose(); o.material.dispose(); } }); cube.geometry.dispose(); cubeEdges.geometry.dispose(); hover.geometry.dispose();
     scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); r.dispose(); wrap.remove(); };
   const key = e => {
@@ -577,7 +620,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     e.preventDefault(); schedule();
   };
   document.addEventListener('keydown', key, true); closeB.addEventListener('click', close);
-  exSel.addEventListener('change', () => { const v = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; close(); open3D({ plan, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value }); });
+  rangeSel.addEventListener('change', () => { try { localStorage.setItem('ltplanner.range3d', rangeSel.value); } catch {} dirty = true; schedule(); });
+  exSel.addEventListener('change', () => { const v = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value }).then(close, () => { exSel.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
   window.__v3close = close; schedule(); cv.focus();
   return { close };
 }

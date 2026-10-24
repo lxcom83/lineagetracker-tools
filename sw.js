@@ -1,6 +1,6 @@
 /* LT tools: works offline after the first visit. Same idea as the app: everything the tools need is cached; a new
    version replaces the cache. Sign-in, Drive and Dropbox always go to the network (they are on other addresses). */
-const CACHE = 'lt-tools-v1.10.1';
+const CACHE = 'lt-tools-v1.10.2';
 const FILES = ['./', 'index.html', 'signin.html', 'manifest.webmanifest', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
   'brand/logo-icon.svg', 'brand/logo-icon-dark.svg',
   'kit/kit.css', 'kit/fonts.css', 'kit/core.js', 'kit/bar.js', 'kit/files.js', 'kit/history.js', 'kit/tree.js', 'kit/qr.js', 'kit/barcode.js', 'kit/signin.js', 'kit/home.js', 'kit/planner.js', 'kit/brand.js', 'kit/fold.js', 'kit/plantdb.js', 'kit/ai.js', 'kit/keybox.js',
