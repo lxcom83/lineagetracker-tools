@@ -39,20 +39,38 @@ export function orthoView({cx, cz, halfH, aspect, heightPx}){
   return { poly:[[cx-hw,cz-halfH],[cx+hw,cz-halfH],[cx+hw,cz+halfH],[cx-hw,cz+halfH]], uniform:true, pxAt:()=>k, eye:null };
 }
 // Perspective camera. eye and target are [x,y,z] in metres, y up.
-export function perspView({eye, target, fovDeg, aspect, heightPx, maxDist=600}){
+export function perspView({eye, target, fovDeg, aspect, heightPx, maxDist=600, yMin=0, yMax=0, groundY=null}){
   const f = norm3(sub3(target, eye)), up=[0,1,0];
   let r = cross3(f, up); if(len3(r)<1e-6) r=[1,0,0]; r=norm3(r);
   const u = cross3(r, f), th = Math.tan(fovDeg*Math.PI/360), tw = th*aspect;
-  const poly = [];
+  // Where on the plan can something be and still show up in the picture? Plants stand on ground somewhere between yMin and yMax (the lowest and
+  // highest ground on the site) and reach up to the top of the tallest plant, so the picture's footprint is the shadow of the view pyramid cut
+  // to that slab: the corner rays meet the bottom plane (far side) and the top plane (near side, often right under the camera).
+  // Using only a flat plane at ground level (the old way) lost the whole foreground whenever the camera stood on a hill.
+  const pts = [];
   for(const [sx,sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-    let d = norm3(add3(add3(f, scale3(r, sx*tw)), scale3(u, sy*th)));
-    let t = d[1] < -1e-4 ? -eye[1]/d[1] : Infinity;
-    if(!(t > 0) || t > maxDist) t = maxDist;            // looking above the horizon: stop at the distance limit
-    poly.push([eye[0]+d[0]*t, eye[2]+d[2]*t]);
+    const d = norm3(add3(add3(f, scale3(r, sx*tw)), scale3(u, sy*th)));
+    for(const plane of (yMax>yMin ? [yMin, yMax] : [yMin])){
+      let t;
+      if(plane >= eye[1]) t = 0;                                    // the plane is at or above the camera: this part of the view starts right at the camera
+      else if(d[1] < -1e-4) t = Math.min(maxDist, (plane-eye[1])/d[1]);   // the ray comes down to the plane
+      else t = maxDist;                                              // looking at or above the horizon: stop at the distance limit
+      pts.push([eye[0]+d[0]*t, eye[2]+d[2]*t]);
+    }
   }
-  // keep the camera's own spot inside the outline (when the view is not steeply down)
+  if(eye[1] <= yMax) pts.push([eye[0], eye[2]]);                       // the camera's own spot
+  const poly = hull(pts);
   const pf = heightPx/(2*th);
-  return { poly, uniform:false, eye, pxAt:(x,z)=>{ const dx=x-eye[0], dz=z-eye[2]; const d=Math.sqrt(dx*dx+dz*dz+eye[1]*eye[1]); return pf/Math.max(d,0.5); } };
+  return { poly, uniform:false, eye, pxAt:(x,z)=>{ const dx=x-eye[0], dz=z-eye[2]; const dy=groundY?Math.max(0.5,eye[1]-groundY(x,z)):eye[1], d=Math.sqrt(dx*dx+dz*dz+dy*dy); return pf/Math.max(d,0.5); } };
+}
+// convex outline of a few points (monotone chain), counter-clockwise
+function hull(P){
+  const q = P.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]).filter((p,i,a)=>!i||p[0]!==a[i-1][0]||p[1]!==a[i-1][1]);
+  if(q.length<3) return q.length?q:[[0,0]];
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]); const lo=[], up=[];
+  for(const p of q){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  for(const p of q.slice().reverse()){ while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  lo.pop(); up.pop(); return lo.concat(up);
 }
 const sub3=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], add3=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]], scale3=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
 const len3=a=>Math.hypot(a[0],a[1],a[2]), norm3=a=>{const l=len3(a)||1;return [a[0]/l,a[1]/l,a[2]/l];};

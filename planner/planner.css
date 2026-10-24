@@ -120,3 +120,10 @@
 .sh-img:not([src]){display:none}
 .pl-label.pl-sub{font-weight:500;opacity:.85}
 .pl-showsel{width:auto;max-width:11rem;font-size:.8rem}
+.v3-nav .icon-btn.on{background:#2b6cb0;color:#fff}
+.v3-pad{position:absolute;left:16px;bottom:16px;width:116px;height:116px;border-radius:50%;background:rgba(255,255,255,.55);border:2px solid rgba(38,50,61,.5);touch-action:none;display:flex;align-items:center;justify-content:center;z-index:3}
+.v3-pad[hidden],.v3-run[hidden],.v3-walkhint[hidden]{display:none}
+.v3-padknob{width:46px;height:46px;border-radius:50%;background:rgba(43,108,176,.85);pointer-events:none}
+.v3-run{position:absolute;left:144px;bottom:52px;padding:10px 14px;border-radius:20px;border:2px solid rgba(38,50,61,.5);background:rgba(255,255,255,.7);font-weight:600;z-index:3}
+.v3-run.on{background:#2b6cb0;color:#fff}
+.v3-walkhint{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(20,30,40,.78);color:#fff;padding:6px 12px;border-radius:14px;font-size:.85rem;max-width:90%;text-align:center;z-index:3}

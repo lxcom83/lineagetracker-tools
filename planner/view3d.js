@@ -39,7 +39,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const closeB = el('button', { type: 'button', class: 'btn sm', text: 'Close' });
   let showLabels = true; try { showLabels = localStorage.getItem('ltplanner.labels3d') !== 'off'; } catch {}
   const labCb = el('input', { type: 'checkbox', checked: showLabels, 'aria-label': 'Show names on the plan' });
-  const help = el('p', { class: 'small muted v3-help', text: 'Drag: turn · Right-drag or two fingers: move · Wheel or pinch: zoom · Double-click: centre there' });
+  const help = el('p', { class: 'small muted v3-help', text: 'Drag: turn · Right-drag or two fingers: move · Wheel or pinch: zoom · Double-click: centre there · P or the person button: walk around at eye height' });
   const shareB = el('button', { type: 'button', class: 'btn sm', title: 'Make a picture to share or save' }, [icon('image'), ' Share picture']);
   let panelOpen = window.innerWidth >= 900; try { const s = localStorage.getItem('ltplanner.v3panel'); if (s) panelOpen = s === 'open'; } catch {}
   const panelB = el('button', { type: 'button', class: 'icon-btn v3-pb', 'aria-label': 'Show or hide the side panel', 'aria-expanded': String(panelOpen), title: 'Side panel' }, [icon('menu')]);
@@ -56,9 +56,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const homeB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Home view (H)', 'aria-label': 'Home view' }, [navIcon('home')]);
   const fitB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Fit the whole site (F)', 'aria-label': 'Fit the whole site' }, [icon('fit')]);
   const topB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Look straight down (T)', 'aria-label': 'Look straight down' }, [navIcon('top')]);
-  const nav = el('div', { class: 'v3-nav' }, [homeB, fitB, topB]);
+  const walkB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Person view: walk around at eye height (P)', 'aria-label': 'Person view', 'aria-pressed': 'false' }, [navIcon('walk')]);
+  const nav = el('div', { class: 'v3-nav' }, [walkB, homeB, fitB, topB]);
+  const padKnob = el('div', { class: 'v3-padknob' });
+  const pad = el('div', { class: 'v3-pad', hidden: true, 'aria-hidden': 'true' }, [padKnob]);
+  const runB = el('button', { type: 'button', class: 'v3-run', hidden: true, 'aria-pressed': 'false', text: 'Run' });
+  const walkHint = el('div', { class: 'v3-walkhint', role: 'status', hidden: true, text: 'Person view: drag to look · W A S D or the pad to walk · Q E or arrows to turn · Shift to run · Esc or P to leave' });
   const labelsEl = el('div', { class: 'v3-labels', 'aria-hidden': 'true', hidden: !showLabels });
-  const stage = el('div', { class: 'v3-stage' }, [side, el('div', { class: 'v3-view' }, [cv, labelsEl, nav])]);
+  const stage = el('div', { class: 'v3-stage' }, [side, el('div', { class: 'v3-view' }, [cv, labelsEl, nav, pad, runB, walkHint])]);
   const wrap = el('div', { class: 'v3-wrap', role: 'dialog', 'aria-label': '3D view' }, [bar, stage]);
   document.body.append(wrap);
 
@@ -377,6 +382,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     blocks.push({ id: it.id, species: k, x: it.x, z: it.y, rows: 1, cols: 1, rowSpacing: 1, plantSpacing: 1, seed: 7, sizeVar: 0, scale: sc }); }
   const sp = {}; for (const k of used) { const e = real(k); sp[k] = { h: e.h, r: e.r, tris: [0, 1, 2].map(L => Math.round(geoStats(fv.geometry(k, L)).tris)).concat([8]) }; }
   const field = new F.PlantField({ quality: qSel.value, species: sp, blocks }); field.setGround(plantY);
+  // the highest a plant top can be above the lowest ground: used to work out which part of the plan can show in the picture (the foreground was lost when the camera stood on a hill)
+  const slabTop = (g ? (TR.range(g).max - base) * ex : 0) + 1 + Object.values(sp).reduce((m, v) => Math.max(m, (v.h || 0) * 1.6), 0);
 
   /* ---- labels: names over beds, areas, rows, trees, tanks, notes and lines (HTML on top of the picture, placed every frame) ---- */
   let glowSet = new Set(glow || []);
@@ -445,7 +452,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const N = site.north || 0, bearingYaw = b => b + N;   // a compass bearing as a plan direction
   const diag = Math.hypot(site.w, site.h), fitDist = () => { const a = Math.max(0.3, cv.clientWidth / Math.max(1, cv.clientHeight)); return (diag / 2) / Math.tan(FOV / 2 * D2R) / Math.min(1, a) * 1.08 + 1; };
   const HOME = () => ({ tx: site.w / 2, tz: site.h / 2, yaw: bearingYaw(210), pitch: 38, dist: fitDist() });
-  const st = Object.assign(HOME(), keepView || {}); let anim = null;
+  const st = Object.assign(HOME(), keepView || {}); let anim = null, walk = null, orbitSave = null;
+  const EYE = 1.7, WALK_FOV = 65;
   let raf = 0, dirty = true, cam = persp, lastDraw = 0, sharpBusy = false;
   const offset = () => { const y = st.yaw * D2R, p = st.pitch * D2R; return new THREE.Vector3(Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p)); };
   function placeCamera(w, h) {
@@ -453,7 +461,13 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     if (projSel.value === 'ortho') {
       cam = ortho; const half = st.dist * Math.tan(FOV / 2 * D2R); ortho.left = -half * a; ortho.right = half * a; ortho.top = half; ortho.bottom = -half;
       ortho.position.copy(tgt).addScaledVector(o, Math.max(st.dist, diag) + 500);
-    } else { cam = persp; persp.aspect = a; persp.position.copy(tgt).addScaledVector(o, st.dist); const gnd = gy(persp.position.x, persp.position.z) + 0.6; if (persp.position.y < gnd) persp.position.y = gnd; }
+    } else if (walk) {
+      cam = persp; persp.aspect = a; if (persp.fov !== WALK_FOV) persp.fov = WALK_FOV;
+      const wy = walk.yaw * D2R, wp = walk.pitch * D2R, ex = walk.x, ez = walk.z, ey = gy(ex, ez) + EYE;
+      persp.position.set(ex, ey, ez); const look = new THREE.Vector3(Math.sin(wy) * Math.cos(wp), Math.sin(wp), -Math.cos(wy) * Math.cos(wp));
+      cam.up.set(0, 1, 0); cam.lookAt(persp.position.clone().addScaledVector(look, 10)); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      return persp.position.clone().addScaledVector(look, 10);
+    } else { cam = persp; if (persp.fov !== FOV) persp.fov = FOV; persp.aspect = a; persp.position.copy(tgt).addScaledVector(o, st.dist); const gnd = gy(persp.position.x, persp.position.z) + 0.6; if (persp.position.y < gnd) persp.position.y = gnd; }
     cam.up.set(0, 1, 0); if (st.pitch > 89) { const y = st.yaw * D2R; cam.up.set(-Math.sin(y), 0, Math.cos(y)); }   // looking straight down: keep "away from the camera" at the top of the screen
     cam.lookAt(tgt); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     return tgt;
@@ -491,6 +505,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   }
   const snapBearing = b => (Math.round(b / 90) * 90) % 360;
   function flyTo(to, ms = 380) {
+    if (walk) exitWalk();
     const from = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }, goal = Object.assign({}, from, to);
     let dy = ((goal.yaw - from.yaw) % 360 + 540) % 360 - 180; goal.yaw = from.yaw + dy;   // the short way round
     const t0 = performance.now(); anim = () => { const t = Math.min(1, (performance.now() - t0) / ms), k = t * t * (3 - 2 * t);
@@ -502,21 +517,22 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const topView = () => flyTo({ pitch: 89.9, yaw: bearingYaw(snapBearing(((st.yaw - N) % 360 + 360) % 360)) });
 
   function frame() {
-    raf = 0; if (anim) { anim(); dirty = true; }
+    raf = 0; if (closed) return; if (anim) { anim(); dirty = true; }
+    const moving = walk ? walkStep() : false;
     if (glowMats.length) {   // the pulse redraws about 12 times a second (not every screen refresh, to spare tablet batteries); none with reduced motion
       const p = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(performance.now() / 260); for (const m of glowMats) m.opacity = m.userData.base * (0.3 + 0.7 * p);
       if (!reduceMotion && !glowTimer) glowTimer = setTimeout(() => { glowTimer = 0; if (glowMats.length) schedule(); }, 80);
       if (!reduceMotion) dirty = true;
     }
     if (!dirty) return;
-    if (qSel.value === 'low' && performance.now() - lastDraw < 25 && !sharpBusy) { raf = requestAnimationFrame(frame); return; }   // Low draws at most about 30 times a second: cooler and kinder to a tablet battery
+    if (qSel.value === 'low' && performance.now() - lastDraw < 25 && !sharpBusy) { if (!raf) raf = requestAnimationFrame(frame); return; }   // Low draws at most about 30 times a second: cooler and kinder to a tablet battery
     lastDraw = performance.now(); dirty = false;
     if (!sharpBusy) { const want = qSel.value === 'low' ? 1 : Math.min(2, window.devicePixelRatio || 1); if (r.getPixelRatio() !== want) r.setPixelRatio(want); }   // Low draws at plain screen resolution
     const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) { schedule(); return; }
     r.setSize(w, h, false); const tgt = placeCamera(w, h);
     const rangeNow = d => RANGES[rangeSel.value] ? Math.max(RANGES[rangeSel.value], d * 2.2) : Math.max(300, d * 4), tgtDistance = () => st.dist;
     const view = projSel.value === 'ortho' && st.pitch > 89 ? F.orthoView({ cx: st.tx, cz: st.tz, halfH: st.dist * Math.tan(FOV / 2 * D2R), aspect: w / h, heightPx: h })
-      : F.perspView({ eye: [cam.position.x, cam.position.y, cam.position.z].map((v, i) => projSel.value === 'ortho' ? [tgt.x, tgt.y, tgt.z][i] + offset().toArray()[i] * st.dist : v), target: [tgt.x, tgt.y, tgt.z], fovDeg: FOV, aspect: w / h, heightPx: h, maxDist: rangeNow(tgtDistance()) });
+      : F.perspView({ eye: [cam.position.x, cam.position.y, cam.position.z].map((v, i) => projSel.value === 'ortho' ? [tgt.x, tgt.y, tgt.z][i] + offset().toArray()[i] * st.dist : v), target: [tgt.x, tgt.y, tgt.z], fovDeg: walk ? WALK_FOV : FOV, aspect: w / h, heightPx: h, groundY: walk ? gy : null, maxDist: rangeNow(tgtDistance()), yMin: -0.5, yMax: slabTop });
     // sun from date, time and latitude (model.js)
     const hour = +hourIn.value, s = M.sunAt(date, hour, site.lat), az = (s.az + N) * D2R, el_ = Math.max(4, s.el) * D2R, warm = clamp(s.el / 40, 0, 1);
     sun.position.set(st.tx + Math.sin(az) * Math.cos(el_) * 400, Math.sin(el_) * 400 + tgt.y, st.tz - Math.cos(az) * Math.cos(el_) * 400); sun.target.position.set(st.tx, tgt.y, st.tz); scene.add(sun.target);
@@ -529,13 +545,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     r.setScissorTest(false); r.setViewport(0, 0, w, h); r.clear(); r.render(scene, cam); const drawCalls = r.info.render.calls, sceneObjs = scene.children.length;
     // the view cube looks the same way as the camera
     cube.children.forEach(c => { if (c.isSprite) c.visible = st.pitch > 60; });   // the compass letters only help when looking down
-    const o = offset(); cubeCam.position.set(o.x * 3, o.y * 3, o.z * 3); cubeCam.up.copy(cam.up); cubeCam.lookAt(0, 0, 0); cubeCam.updateMatrixWorld();
+    const o = walk ? new THREE.Vector3(-Math.sin(walk.yaw * D2R) * Math.cos(walk.pitch * D2R), Math.sin(walk.pitch * D2R), Math.cos(walk.yaw * D2R) * Math.cos(walk.pitch * D2R)) : offset(); cubeCam.position.set(o.x * 3, o.y * 3, o.z * 3); cubeCam.up.copy(cam.up); cubeCam.lookAt(0, 0, 0); cubeCam.updateMatrixWorld();
     const R = cubeRect(); r.setScissorTest(true); r.setScissor(R.x, h - R.y - R.s, R.s, R.s); r.setViewport(R.x, h - R.y - R.s, R.s, R.s); r.clearDepth(); r.render(cubeScene, cubeCam); r.setScissorTest(false);
     if (showLabels) { const cp = cam.position; labels.sort((a, b) => ((a.x - cp.x) ** 2 + (a.y - cp.y) ** 2 + (a.z - cp.z) ** 2) - ((b.x - cp.x) ** 2 + (b.y - cp.y) ** 2 + (b.z - cp.z) ** 2)); placeLabels(w, h); }
     const t = sel.stats; info.textContent = field.count().toLocaleString() + ' plants · drawn ' + t.drawn.toLocaleString() + ' (' + t.full + ' full, ' + t.reduced + ' reduced, ' + t.proxy + ' simple, ' + t.marker + ' flat) · ' + Math.round(t.tris).toLocaleString() + ' triangles';
     window.__v3scene = scene; window.__v3 = { merged: mergedMeshes, calls: drawCalls, objs: sceneObjs, glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
       beds: beds.map(b => ({ id: b.id, top: b.__top })), under: (x, z) => gy(x, z), plantY, view: k => ({ home, fit, top: topView })[k](), look: o => flyTo(o, 1), dir: (x, y, z) => goToCubeDir(new THREE.Vector3(x, y, z)) };
     if (anim) schedule();
+    if (anim || moving) schedule();
   }
   const schedule = () => { dirty = true; if (!raf) raf = requestAnimationFrame(frame); };
 
@@ -552,7 +569,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const keepOnSite = () => { const m = diag * 0.25; st.tx = clamp(st.tx, -m, site.w + m); st.tz = clamp(st.tz, -m, site.h + m); };
   cv.addEventListener('pointerdown', e => {
     cv.focus(); const [px, py] = rel(e);
-    if (ptrs.size === 0) { const c = cubePick(px, py); if (c) { if (c.d) goToCubeDir(c.d); return; } }
+    if (ptrs.size === 0) { const c = cubePick(px, py); if (c) { if (c.d) { if (walk) exitWalk(); goToCubeDir(c.d); } return; } }
+    if (walk) { if (ptrs.size) return; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [px, py]); drag = { look: true, last: [px, py] }; return; }
     cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [px, py]); anim = null;
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], dist: st.dist }; const gp = groundAt(pinch.mid[0], pinch.mid[1]); pinch.y = gp ? gp.y : gy(st.tx, st.tz); pinch.grab = groundAt(pinch.mid[0], pinch.mid[1], pinch.y); drag = null; return; }
     const move = e.button === 1 || e.button === 2 || (e.button === 0 && e.shiftKey);
@@ -570,11 +588,12 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       schedule(); return;
     }
     if (!drag) return;
+    if (drag.look) { if (!walk) return; const dx = px - drag.last[0], dy = py - drag.last[1]; drag.last = [px, py]; walk.yaw -= dx * 0.25; walk.pitch = clamp(walk.pitch + dy * 0.2, -80, 80); schedule(); return; }
     if (drag.turn) { const dx = px - drag.last[0], dy = py - drag.last[1]; drag.last = [px, py]; st.yaw -= dx * 0.35; st.pitch = clamp(st.pitch + dy * 0.3, 3, 89.9); }
     else if (drag.move && drag.grab) { const now = groundAt(px, py, drag.y); if (now) { st.tx += drag.grab.x - now.x; st.tz += drag.grab.z - now.z; keepOnSite(); } }
     schedule();
   });
-  const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) drag = null; else if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = { turn: true, last: p }; } };
+  const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) drag = null; else if (ptrs.size === 1 && !walk) { const [p] = [...ptrs.values()]; drag = { turn: true, last: p }; } };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', () => { if (!ptrs.size && hover.visible) { hover.visible = false; schedule(); } });
   // zoom toward the pointer: the spot under it stays under it
   const zoomAt = (f, px, py) => {
@@ -582,9 +601,44 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     if (before) { const k = 1 - nd / st.dist; st.tx += (before.x - st.tx) * k; st.tz += (before.z - st.tz) * k; keepOnSite(); }
     st.dist = nd; schedule();
   };
-  cv.addEventListener('wheel', e => { e.preventDefault(); anim = null; const [px, py] = rel(e); zoomAt(Math.exp(clamp(e.deltaY, -300, 300) * 0.0015), px, py); }, { passive: false });
-  cv.addEventListener('dblclick', e => { const [px, py] = rel(e); if (cubePick(px, py)) return; const p = groundAt(px, py); if (p) flyTo({ tx: clamp(p.x, 0, site.w), tz: clamp(p.z, 0, site.h), dist: Math.max(3, st.dist * 0.6) }); });
+  cv.addEventListener('wheel', e => { e.preventDefault(); anim = null; if (walk) { walkGo(-clamp(e.deltaY, -300, 300) * 0.01, 0); return; } const [px, py] = rel(e); zoomAt(Math.exp(clamp(e.deltaY, -300, 300) * 0.0015), px, py); }, { passive: false });
+  cv.addEventListener('dblclick', e => { const [px, py] = rel(e); if (cubePick(px, py) || walk) return; const p = groundAt(px, py); if (p) flyTo({ tx: clamp(p.x, 0, site.w), tz: clamp(p.z, 0, site.h), dist: Math.max(3, st.dist * 0.6) }); });
   cv.addEventListener('contextmenu', e => e.preventDefault());
+  /* ---- Person view: stand on the ground at eye height and walk about ---- */
+  let hintT = 0; const wkeys = new Set(), wpad = { x: 0, y: 0 };
+  const walkGo = (fwd, side) => { if (!walk) return; const wy = walk.yaw * D2R, fx = Math.sin(wy), fz = -Math.cos(wy); walk.x = clamp(walk.x + fx * fwd + -fz * side, 0.5, site.w - 0.5); walk.z = clamp(walk.z + fz * fwd + fx * side, 0.5, site.h - 0.5); st.tx = walk.x; st.tz = walk.z; schedule(); };
+  function walkStep() {
+    const now = performance.now(), dt = Math.min(0.25, (now - walk.t) / 1000); walk.t = now;
+    let f = (wkeys.has('w') || wkeys.has('arrowup') ? 1 : 0) - (wkeys.has('s') || wkeys.has('arrowdown') ? 1 : 0) + -wpad.y, sd = (wkeys.has('d') ? 1 : 0) - (wkeys.has('a') ? 1 : 0) + wpad.x, tr = (wkeys.has('arrowleft') || wkeys.has('q') ? 1 : 0) - (wkeys.has('arrowright') || wkeys.has('e') ? 1 : 0);
+    f = clamp(f, -1, 1); sd = clamp(sd, -1, 1);
+    if (tr) { walk.yaw -= tr * 90 * dt; dirty = true; }
+    if (f || sd) { const sp = (wkeys.has('shift') || walk.run ? 5.5 : 1.8) * dt; walkGo(f * sp, sd * sp); dirty = true; }
+    return !!(f || sd || tr);
+  }
+  function enterWalk() {
+    if (walk) return;
+    if (projSel.value === 'ortho') { projSel.value = 'persp'; }
+    drag = null; pinch = null; orbitSave = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; anim = null;
+    walk = { x: clamp(st.tx, Math.min(1, site.w / 2), Math.max(site.w / 2, site.w - 1)), z: clamp(st.tz, Math.min(1, site.h / 2), Math.max(site.h / 2, site.h - 1)), yaw: st.yaw + 180, pitch: -4, t: performance.now(), run: false };
+    st.dist = 40; walkB.setAttribute('aria-pressed', 'true'); walkB.classList.add('on'); pad.hidden = false; runB.hidden = false; walkHint.hidden = false; clearTimeout(hintT); hintT = setTimeout(() => { walkHint.hidden = true; }, 6000); schedule();
+  }
+  function exitWalk() {
+    if (!walk) return; walk = null; drag = null; pinch = null; clearTimeout(hintT); wkeys.clear(); wpad.x = wpad.y = 0; padKnob.style.transform = '';
+    Object.assign(st, orbitSave); walkB.setAttribute('aria-pressed', 'false'); walkB.classList.remove('on'); pad.hidden = true; runB.hidden = true; runB.setAttribute('aria-pressed', 'false'); runB.classList.remove('on'); walkHint.hidden = true; schedule();
+  }
+  const togglePerson = () => { if (walk) exitWalk(); else enterWalk(); };
+  walkB.addEventListener('click', togglePerson);
+  runB.addEventListener('click', () => { if (!walk) return; walk.run = !walk.run; runB.classList.toggle('on', walk.run); runB.setAttribute('aria-pressed', String(walk.run)); });
+  { let pid = null; const setPad = e => { const r0 = pad.getBoundingClientRect(), R = r0.width / 2; let dx = e.clientX - (r0.left + R), dy = e.clientY - (r0.top + R); const L = Math.hypot(dx, dy); if (L > R) { dx *= R / L; dy *= R / L; } wpad.x = dx / R; wpad.y = dy / R; if (Math.hypot(wpad.x, wpad.y) < 0.15) { wpad.x = wpad.y = 0; } padKnob.style.transform = `translate(${dx}px, ${dy}px)`; schedule(); };
+    pad.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); pid = e.pointerId; pad.setPointerCapture(pid); setPad(e); });
+    pad.addEventListener('pointermove', e => { if (e.pointerId === pid) setPad(e); });
+    const end = e => { if (e.pointerId !== pid) return; pid = null; wpad.x = wpad.y = 0; padKnob.style.transform = ''; };
+    pad.addEventListener('lostpointercapture', end); pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end); }
+  const keyUp = e => { wkeys.delete(e.key.toLowerCase()); };
+  const dropKeys = () => { wkeys.clear(); wpad.x = wpad.y = 0; padKnob.style.transform = ''; };
+  const visCh = () => { if (document.hidden) dropKeys(); };
+  document.addEventListener('keyup', keyUp, true); addEventListener('blur', dropKeys); document.addEventListener('visibilitychange', visCh);
+  window.__v3walk = { owner: wrap, get: () => walk && { x: walk.x, z: walk.z, yaw: walk.yaw, pitch: walk.pitch, eye: [persp.position.x, persp.position.y, persp.position.z] }, enter: enterWalk, exit: exitWalk, ground: gy };
   homeB.addEventListener('click', home); fitB.addEventListener('click', fit); topB.addEventListener('click', topView);
   /* ---- side panel, find, show ticks, share picture ---- */
   const setPanel = on => { panelOpen = on; side.hidden = !on; panelB.setAttribute('aria-expanded', String(on)); try { localStorage.setItem('ltplanner.v3panel', on ? 'open' : 'closed'); } catch {} schedule(); setTimeout(schedule, 60); };
@@ -610,15 +664,18 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   setGlow(findStart ? matches(findStart) : glow); setSubs(); let savedPanel = null; try { savedPanel = localStorage.getItem('ltplanner.v3panel'); } catch {} if (window.innerWidth < 900 && panelOpen && !savedPanel) setPanel(false);
   qSel.addEventListener('change', () => { F.setQuality(qSel.value); field.setQuality(qSel.value); fv.shadows = setShadows(qSel.value); fv.setDetail(1, '_'); fv.setDetail(1, qSel.value); schedule(); });
   labCb.addEventListener('change', () => { showLabels = labCb.checked; labelsEl.hidden = !showLabels; try { localStorage.setItem('ltplanner.labels3d', showLabels ? 'on' : 'off'); } catch {} schedule(); });
-  projSel.addEventListener('change', schedule); hourIn.addEventListener('input', schedule); addEventListener('resize', schedule);
+  projSel.addEventListener('change', () => { if (walk && projSel.value === 'ortho') exitWalk(); schedule(); }); hourIn.addEventListener('input', schedule); addEventListener('resize', schedule);
   let closed = false;
-  const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); clearTimeout(glowTimer); glowMats.length = 0; slabMat.dispose(); beamMat.dispose(); removeEventListener('resize', schedule); document.removeEventListener('keydown', key, true); fv.dispose(); mats.forEach(m => m.dispose()); mat.dispose(); surfMats.forEach(m => m.dispose()); texs.forEach(t => t.dispose()); groundMesh.material.dispose();
+  const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); clearTimeout(glowTimer); glowMats.length = 0; slabMat.dispose(); beamMat.dispose(); removeEventListener('resize', schedule); document.removeEventListener('keyup', keyUp, true); removeEventListener('blur', dropKeys); document.removeEventListener('visibilitychange', visCh); clearTimeout(hintT); if (window.__v3walk && window.__v3walk.owner === wrap) delete window.__v3walk; document.removeEventListener('keydown', key, true); walk = null; fv.dispose(); mats.forEach(m => m.dispose()); mat.dispose(); surfMats.forEach(m => m.dispose()); texs.forEach(t => t.dispose()); groundMesh.material.dispose();
     cubeMats.forEach(m => { m.map.dispose(); m.dispose(); }); cube.traverse(o => { if (o.isSprite) { o.material.map.dispose(); o.material.dispose(); } }); cube.geometry.dispose(); cubeEdges.geometry.dispose(); hover.geometry.dispose();
     scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); r.dispose(); wrap.remove(); };
   const key = e => {
-    if (e.key === 'Escape') { if (e.target === findIn && findIn.value) return; e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key === 'Escape') { if (e.target === findIn && findIn.value) return; if (walk) { e.preventDefault(); e.stopPropagation(); exitWalk(); return; } e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.target.closest && e.target.closest('select,input')) return;
-    const k = e.key.toLowerCase(), act = { f: fit, h: home, t: topView }[k];
+    const k = e.key.toLowerCase();
+    if (k === 'p') { e.preventDefault(); togglePerson(); return; }
+    if (walk) { if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { wkeys.add(k); e.preventDefault(); schedule(); return; } if (k === '+' || k === '=' || k === '-') return; }
+    const act = { f: fit, h: home, t: topView }[k];
     if (act) { e.preventDefault(); act(); return; }
     if (e.key === 'ArrowLeft') st.yaw += 8; else if (e.key === 'ArrowRight') st.yaw -= 8; else if (e.key === 'ArrowUp') st.pitch = clamp(st.pitch + 6, 3, 89.9); else if (e.key === 'ArrowDown') st.pitch = clamp(st.pitch - 6, 3, 89.9);
     else if (e.key === '+' || e.key === '=') zoomAt(1 / 1.2); else if (e.key === '-') zoomAt(1.2); else return;
@@ -626,12 +683,12 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   };
   document.addEventListener('keydown', key, true); closeB.addEventListener('click', close);
   rangeSel.addEventListener('change', () => { try { localStorage.setItem('ltplanner.range3d', rangeSel.value); } catch {} dirty = true; schedule(); });
-  exSel.addEventListener('change', () => { const v = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value }).then(close, () => { exSel.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
+  exSel.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value }).then(close, () => { exSel.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
   window.__v3close = close; schedule(); cv.focus();
   return { close };
 }
 /* two small icons the shared kit does not have */
 function navIcon(k) {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'ic');
-  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', k === 'home' ? 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10' : 'M12 3v10M8 9l4 4 4-4M4 17h16l-3 4H7z'); s.append(p); return s;
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', k === 'home' ? 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10' : k === 'walk' ? 'M12 3.2a1.8 1.8 0 1 1 0 3.6a1.8 1.8 0 0 1 0-3.6zM9 9.5h6l1.5 5M9 9.5L7.5 14.5M10.5 14v7M13.5 14v7' : 'M12 3v10M8 9l4 4 4-4M4 17h16l-3 4H7z'); s.append(p); return s;
 }
