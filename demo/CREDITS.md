@@ -1,0 +1,4 @@
+# Credits
+- Three.js (MIT, mrdoob and contributors) is vendored unchanged in vendor/ with its licence (THREE-LICENSE.txt).
+- Plant shapes are our own code (plants.js). Inspired in approach by public work such as EZ-Tree (MIT); no code copied.
+- Fruit trees (v4): shapes, sizes and where the fruit grows were checked against public growing guides and botanical descriptions, used as reference only (no images or text copied), for example: University of Florida IFAS mango fact sheet (fruit on long stalks at the ends of panicles), National Parks Singapore Flora and Fauna Web (mango, papaya), Brisbane botany notes on Carica papaya (fruit on the trunk below the leaves), macadamia descriptions (nuts in long hanging racemes), RHS "identifying fruit buds" and University of Illinois Extension pruning notes (spur bearing in apples, pears, plums and cherries; tip bearing).
