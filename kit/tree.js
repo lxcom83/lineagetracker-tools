@@ -20,7 +20,7 @@ export function featureTree(root, o) {
   function row(n, depth) {
     const isGroup = Array.isArray(n.children);
     const sel = o.isSelected(n.id);
-    const r = el('div', { class: 'trow' + (sel ? ' sel' : '') + (n.off ? ' off' : '') + (n.hidden ? ' hid' : ''), role: 'treeitem', tabindex: '-1', 'aria-selected': sel ? 'true' : 'false', 'aria-level': String(depth + 1), 'data-id': n.id });
+    const r = el('div', { class: 'trow' + (sel ? ' sel' : '') + (n.glow ? ' glow' : '') + (n.off ? ' off' : '') + (n.hidden ? ' hid' : ''), role: 'treeitem', tabindex: '-1', 'aria-selected': sel ? 'true' : 'false', 'aria-level': String(depth + 1), 'data-id': n.id });
     if (isGroup) r.setAttribute('aria-expanded', n.open === false ? 'false' : 'true');
     const handle = el('span', { class: 'tw handle', title: 'Drag to reorder', 'aria-hidden': 'true' }, [icon('drag')]);
     const tw = isGroup ? el('button', { type: 'button', class: 'tw', 'aria-label': (n.open === false ? 'Open ' : 'Close ') + n.name, tabindex: '-1' }, [icon(n.open === false ? 'chevR' : 'chevD')]) : el('span', { class: 'tw' });

@@ -114,6 +114,7 @@ const ICONS = {
   alignL: 'M4 6h16M4 10h10M4 14h16M4 18h10', alignC: 'M4 6h16M7 10h10M4 14h16M7 18h10', alignR: 'M4 6h16M10 10h10M4 14h16M10 18h10', tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z',
   hill: 'M2 19l6-9 4 5 3-4 7 8zM15.5 8.5a1.5 1.5 0 100-.01', rows: 'M3 8h18M3 13h18M3 18h18M7 8V5M12 8V5M17 8V5M7 13v-2.5M12 13v-2.5M17 13v-2.5', path: 'M8 21l3-18M16 21l-3-18M12 7v2M12 13v2', fence: 'M5 20V7l1.5-2L8 7v13M16 20V7l1.5-2L19 7v13M3 10h18M3 16h18', drip: 'M3 7h18M7 7v3M12 7v3M17 7v3M7 13.5a1 1 0 100 .01M12 15.5a1 1 0 100 .01M17 13.5a1 1 0 100 .01',
+  house: 'M3 11l9-7 9 7M5 9.5V20h14V9.5M10 20v-5h4v5', greenhouse: 'M3 20V10l9-6 9 6v10zM3 10h18M12 4v16M7.5 7v13M16.5 7v13', pergola: 'M3 7h18M3 10h18M5 7v13M19 7v13M8 5v5M12 5v5M16 5v5', trellis: 'M4 20V4M20 20V4M4 4l16 16M20 4L4 20M4 12l8-8 8 8-8 8z', wall: 'M3 20h18M3 20V9h18v11M3 13h18M3 16.5h18M8 9v4M14 9v4M11 13v3.5M17 13v3.5M6 16.5V20M13 16.5V20',
   check: 'M5 12l5 5 9-10', barcode: 'M4 5v14M7 5v14M9 5v14M12 5v14M15 5v14M16.5 5v14M20 5v14', calendar: 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4', hash: 'M5 9h14M5 15h14M10 4L8 20M16 4l-2 16', info: 'M12 22a10 10 0 100-20 10 10 0 000 20zM12 11v6M12 7h.01', back: 'M15 6l-6 6 6 6',
 };
 export function icon(name, cls = '') {
@@ -186,6 +187,8 @@ async function authed(path, method, body) {
   return r;
 }
 export const rpc = (name, args) => authed('/rest/v1/rpc/' + name, 'POST', args || {});
+/* a signed-in call to one of our functions (only 'account' allows the tools' address) */
+export const fnAuthed = (name, body) => authed('/functions/v1/' + name, 'POST', body || {});
 const np = s => { try { return String(s).normalize('NFKC'); } catch { return s; } };
 export async function signIn(email, password, captcha, stay) {
   const r = await raw('/auth/v1/token?grant_type=password', 'POST', { email, password: np(password), gotrue_meta_security: { captcha_token: captcha || '' } });
@@ -193,7 +196,7 @@ export async function signIn(email, password, captcha, stay) {
   return r;
 }
 export async function signOut() {
-  const s = getSession(); setSession(null); clearPasses();
+  const s = getSession(); setSession(null); clearPasses(); try { window.sessionStorage.removeItem('lt-tools.ai.open'); } catch { /* ignore */ }
   if (s) await raw('/auth/v1/logout?scope=local', 'POST', {}, s.access_token);
   return true;
 }

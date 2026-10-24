@@ -2,6 +2,7 @@
    same checks as lineagetracker.org. */
 import { CFG, loadConfig, $, el, signIn, signOut, authUser, verifiedFactor, challengeVerify, whoAmI, turnstile, rootUrl, TOOLS } from './core.js';
 import { topBar } from './bar.js';
+import { unlockAIKey } from './ai.js';
 
 const NEXT_OK = Object.values(TOOLS).map(t => t.path).concat(['']);
 const qs = n => { const m = new RegExp('[?&]' + n + '=([^&]*)').exec(location.search || ''); try { return m ? decodeURIComponent(m[1]) : ''; } catch { return ''; } };
@@ -20,9 +21,11 @@ const GOT = {
   const form = $('#si_form'), err = $('#si_err'), btn = $('#si_btn'), ts = turnstile($('#ts'));
   $('#si_show').addEventListener('click', () => { const p = $('#si_p'), show = p.type === 'password'; p.type = show ? 'text' : 'password'; $('#si_show').textContent = show ? 'Hide password' : 'Show password'; $('#si_show').setAttribute('aria-pressed', show ? 'true' : 'false'); });
   const busy = b => { btn.disabled = b; btn.textContent = b ? 'Signing in…' : 'Sign in'; };
+  let pwNow = '';   // kept only until sign-in finishes, to unlock the member's saved AI key quietly
   async function finish() {
     const w = await whoAmI();
-    if (w.state === 'active') { location.replace(rootUrl(next)); return; }
+    if (w.state === 'active') { if (pwNow) { try { await unlockAIKey(pwNow); } catch { /* ignore */ } } pwNow = ''; location.replace(rootUrl(next)); return; }
+    pwNow = '';
     const m = w.state === 'pending' ? GOT.email_not_confirmed : w.state === 'suspended' ? GOT.user_banned : w.state === 'none' ? 'We could not find a member account for this login.' : 'We could not reach the server. Check your connection and try again.';
     await signOut(); err.textContent = m; busy(false); ts.reset();
   }
@@ -34,7 +37,7 @@ const GOT = {
       if (v.ok) { finish(); return; }
       b.disabled = false; $('#si_code_err').textContent = v.status === 429 ? GOT.over_request_rate_limit : 'That code did not work. Check the time on your device and try the next code.'; $('#si_code').value = ''; $('#si_code').focus();
     };
-    $('#si_code_cancel').onclick = async () => { await signOut(); location.reload(); };
+    $('#si_code_cancel').onclick = async () => { pwNow = ''; await signOut(); location.reload(); };
   }
   form.addEventListener('submit', async e => {
     e.preventDefault(); err.textContent = '';
@@ -48,7 +51,7 @@ const GOT = {
       err.textContent = r.status === 0 ? 'We could not reach the server. Check your connection and try again.' : GOT[code] || (r.status === 400 ? GOT.invalid_credentials : 'Something went wrong on our side. Please try again in a few minutes.');
       busy(false); ts.reset(); return;
     }
-    $('#si_p').value = '';
+    pwNow = pw; $('#si_p').value = '';
     const u = await authUser(); const f = verifiedFactor(u.body);
     if (f) codeStep(f); else finish();
   });
