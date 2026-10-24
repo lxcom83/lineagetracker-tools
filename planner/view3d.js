@@ -74,7 +74,9 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   // surfaces drawn on the device (planner/surfaces.js): one texture and one material per kind, freed on close
   const texs = new Map(), surfMats = new Map();
   const tex = k => { let t = texs.get(k); if (!t) { t = new THREE.CanvasTexture(SF.make(k)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texs.set(k, t); } return t; };
-  const surf = k => { let m = surfMats.get(k); if (!m) { m = new THREE.MeshStandardMaterial({ map: tex(k), roughness: k === 'pavers' || k === 'decking' ? 0.8 : 0.97, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }); surfMats.set(k, m); } return m; };
+  const surf = k => { let m = surfMats.get(k); if (!m) { m = new THREE.MeshStandardMaterial({ map: tex(k), roughness: k === 'pavers' || k === 'decking' ? 0.8 : 0.97, side: THREE.DoubleSide }); surfMats.set(k, m); } return m; };
+  // patches laid on the ground (gravel, lawn, dam, paths) get a small depth nudge so the ground cannot poke through them; crop rows do not, or low young plants vanish
+  const lay = k => { const key = k + '#lay'; let m = surfMats.get(key); if (!m) { const b = surf(k); m = new THREE.MeshStandardMaterial({ map: b.map, roughness: b.roughness, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }); surfMats.set(key, m); } return m; };
   const planarUV = (geo, metres) => { const P = geo.getAttribute('position'), uv = new Float32Array(P.count * 2); for (let i = 0; i < P.count; i++) { uv[i * 2] = P.getX(i) / metres; uv[i * 2 + 1] = P.getZ(i) / metres; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
   const scaleUV = (geo, su, sv) => { const U = geo.getAttribute('uv'); for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * su, U.getY(i) * sv); U.needsUpdate = true; return geo; };
   // a grey pattern tinted by a colour (roof sheets, painted pickets), or a see-through one (lattice, mesh): one material per pattern and colour
@@ -123,7 +125,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     if (R < 0.02) {
       const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2));
       c.forEach((p, i) => seg(p, c[(i + 1) % 4], 0.04, 0.1, TIMBER[0], -0.03));
-      drape(it, SOIL, 0.02, 0.06, 'soil'); return;
+      drape(it, SOIL, 0.03, 0.06, 'soil', false); return;
     }
     const top = u.hi + R, B = 0.2;   // sleeper height
     const sides = [[0, -it.h / 2 + T / 2, it.w, 0], [0, it.h / 2 - T / 2, it.w, 0], [-it.w / 2 + T / 2, 0, it.h - 2 * T, 1], [it.w / 2 - T / 2, 0, it.h - 2 * T, 1]];
@@ -143,7 +145,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const ellipse = (it, n, inset = 0) => Array.from({ length: n }, (_, i) => { const t = i / n * Math.PI * 2; return local(it, Math.cos(t) * (it.w / 2 - inset), Math.sin(t) * (it.h / 2 - inset)); });
   // a round bed: in the ground, a soil circle with a low edge; raised, a galvanised ring (the common round steel bed) reaching down past the lowest ground
   function roundBed(it, R, u, ry) {
-    if (R < 0.02) { const c = ellipse(it, 36); c.forEach((p, i) => seg(p, c[(i + 1) % c.length], 0.04, 0.1, '#8d969a', -0.03)); drape(it, SOIL, 0.02, 0.06, 'soil'); return; }
+    if (R < 0.02) { const c = ellipse(it, 36); c.forEach((p, i) => seg(p, c[(i + 1) % c.length], 0.04, 0.1, '#8d969a', -0.03)); drape(it, SOIL, 0.03, 0.06, 'soil', false); return; }
     const top = u.hi + R, low = u.lo - 0.1, H = top - low, ring = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, H, 64, 1, true), tinted('roof', '#a7b0b3'));
     ring.scale.set(it.w / 2, 1, it.h / 2); ring.rotation.y = ry; ring.position.set(it.x, low + H / 2, it.y); scaleUV(ring.geometry, Math.PI * (it.w + it.h) / 2 / 0.76, 1); solids.add(ring);
     const lip = new THREE.Mesh(new THREE.TorusGeometry(1, 0.018, 6, 64), flat('#c3cacc')); lip.rotation.x = Math.PI / 2; const lg = new THREE.Group(); lg.add(lip); lg.scale.set(it.w / 2, 1, it.h / 2); lg.rotation.y = ry; lg.position.set(it.x, top, it.y); solids.add(lg);
@@ -223,6 +225,9 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       let sd = 1; for (const ch of it.id) sd = (sd * 31 + ch.charCodeAt(0)) >>> 0; const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
       const geo = new THREE.IcosahedronGeometry(1, 1), cols = ['#4f7a35', '#5d8a3c', '#6b9446', '#466d2f'], cnt = Math.min(220, Math.round(it.w * it.h * 2.2));
       for (let i = 0; i < cnt; i++) { const [x, z] = local(it, (rnd() - 0.5) * it.w, (rnd() - 0.5) * it.h), r_ = 0.25 + rnd() * 0.3, m = new THREE.Mesh(geo, flat(cols[i % 4])); m.scale.set(r_, r_ * 0.55, r_); m.position.set(x, yTop + r_ * 0.2, z); solids.add(m); }
+      // bunches of grapes hanging under the leaves: a short stalk and a cluster of berries, one shared shape per colour, so they cost almost nothing
+      const bunch = new THREE.ConeGeometry(0.1, 0.3, 7); bunch.translate(0, -0.15, 0); const berries = [flat('#5b2a6e'), flat('#6a7f3a'), flat('#3d2255')], nb = Math.min(160, Math.round(it.w * it.h * 1.6));
+      for (let i = 0; i < nb; i++) { const [x, z] = local(it, (rnd() - 0.5) * it.w * 0.92, (rnd() - 0.5) * it.h * 0.92), k = 0.8 + rnd() * 0.5, m = new THREE.Mesh(bunch, berries[i % 3]); m.scale.set(k, k, k); m.position.set(x, yTop - 0.02, z); solids.add(m); }
       for (const sd2 of [-1, 1]) { const [x, z] = L(-a + 0.08, sd2 * (b - 0.08)); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, Ht, 5), flat('#5a4630')); m.position.set(x + 0.08, gy(x, z) + Ht / 2, z + 0.08); solids.add(m); }
     }
     it.__lab = yTop + (it.cover === 'vine' ? 0.6 : 0.35);
@@ -266,7 +271,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
         if (M_ !== 'sleeper') { const cap = new THREE.Mesh(new THREE.BoxGeometry(pl, 0.05, th + 0.04), flat(M_ === 'brick' ? '#9a9286' : '#b7b1a6')); cap.rotation.y = -ang; cap.position.set(x, top + 0.025, z); solids.add(cap); } } }
   }
   // a flat item laid over the ground (lawn, gravel, an in-ground bed's soil): a sheet that follows every rise and dip
-  function drape(it, colour, lift = 0.015, inset = 0, surface = null) {
+  function drape(it, colour, lift = 0.015, inset = 0, surface = null, laid = true) {
     const w = Math.max(0.05, it.w - 2 * inset), h = Math.max(0.05, it.h - 2 * inset), step = Math.max(0.25, Math.min(1, Math.max(w, h) / 40)), nu = Math.max(1, Math.ceil(w / step)), nv = Math.max(1, Math.ceil(h / step)), pos = [], idx = [];
     if (it.shape === 'round') {   // rings round the centre, so the edge is a smooth circle or oval
       const nr = Math.max(2, Math.ceil(Math.max(w, h) / 2 / step)), ns = 56; { const [x, z] = local(it, 0, 0); pos.push(x, gy(x, z) + lift, z); }
@@ -279,7 +284,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
     if (surface) planarUV(geo, SF.SURFACES[surface].metres);
-    solids.add(new THREE.Mesh(geo, surface ? surf(surface) : flat(colour)));
+    solids.add(new THREE.Mesh(geo, surface ? (laid ? lay(surface) : surf(surface)) : flat(colour)));
   }
   // a path: a ribbon laid on the ground, sampled every 30 cm so it bends smoothly over rises and dips
   function ribbon(pts, width, colour, lift = 0.02, surface = null) {
@@ -295,8 +300,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   let areaN = 0;
   for (const it of all) {
     if (it.kind === 'bed') bed(it);
-    else if (it.kind === 'area') drape(it, it.fill || '#C9DDB8', 0.012 + Math.min(40, areaN++) * 0.003, 0, it.surface || SF.guessSurface(it));   // later areas sit a hair higher, so overlaps never flicker
-    else if (it.kind === 'rows') drape(it, '#4f3a28', 0.02, -0.15, 'soil');   // crop rows stand in a bed of dug soil a little wider than the rows
+    else if (it.kind === 'area') drape(it, it.fill || '#C9DDB8', 0.008 + Math.min(40, areaN++) * 0.0005, 0, it.surface || SF.guessSurface(it));   // later areas sit a hair higher, so overlaps never flicker
+    else if (it.kind === 'rows') drape(it, '#4f3a28', 0.03, -0.15, 'soil', false);   // crop rows stand in a bed of dug soil a little wider than the rows
     else if (it.kind === 'bench') {   // level top on legs that reach the ground
       const u = under(it), ry = -(it.rot || 0) * D2R, top = u.hi + 0.9;
       { const m = box(it.w, 0.04, it.h, '#b9a27f', it.x, top - 0.04, it.y, ry); m.material = surf('decking'); scaleUV(m.geometry, it.w / 1.4, it.h / 1.4); }
@@ -306,7 +311,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       const pad = new THREE.Mesh(new THREE.CylinderGeometry(rr + 0.15, rr + 0.18, padTop - u.lo + 0.1, 24), flat('#b8b2a7')); pad.position.set(it.x, (padTop + u.lo - 0.1) / 2, it.y); solids.add(pad);
       const m = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 1.6, 24), flat('#7FB3DA')); m.position.set(it.x, padTop + 0.8, it.y); solids.add(m);
     }
-    else if (it.kind === 'path') ribbon(it.pts, it.width || 1, '#CBBFA8', 0.025, it.surface || 'gravel');
+    else if (it.kind === 'path') ribbon(it.pts, it.width || 1, '#CBBFA8', 0.032, it.surface || 'gravel');
     else if (it.kind === 'pipe') it.pts.slice(1).forEach((p, i) => seg(it.pts[i], p, 0.04, 0.04, '#2F7FC1', 0.03));
     else if (it.kind === 'fence') fence(it);
     else if (it.kind === 'trellis') trellis(it);

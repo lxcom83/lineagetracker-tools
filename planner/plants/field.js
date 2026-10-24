@@ -170,14 +170,14 @@ export class PlantField {
       split(R0,R1,C0,C1);
     }
     // ---- caps: too many at one level -> the smallest on screen drop to the next level ----
-    let triLeft = Q.triBudget;
+    let used = 0; const lim=[Q.triBudget*0.4, Q.triBudget*0.8, Q.triBudget];   // the nearest few may use at most 40% of the triangles, so the middle distance keeps real 3D shapes instead of falling straight to flat specks
     const caps=[Q.maxFull,Q.maxReduced,Q.maxProxy,Q.maxMarker];
     for(let L=0;L<3;L++){
       const list=cand[L]; if(!list.length) continue;
       list.sort((a,b)=>b.key-a.key);
       const keep=[];
       for(const e of list){ const cost=this.species[e.sp].tris[L];
-        if(keep.length<caps[L] && triLeft>=cost){ keep.push(e); triLeft-=cost; }
+        if(keep.length<caps[L] && used+cost<=lim[L]){ keep.push(e); used+=cost; }
         else { cand[L+1].push(e); stats.demoted++; } }
       cand[L]=keep;
     }
