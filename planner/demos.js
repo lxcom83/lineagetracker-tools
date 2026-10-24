@@ -1,5 +1,6 @@
 /* Demo plans, built here so they work offline with nothing to download. Members share their own plans as files. */
 import { FORMAT, VERSION, cleanPlan } from './model.js';
+import { farm } from './demo-farm.js';
 
 const bed = (id, name, x, y, w, h, extra = {}) => ({ id, kind: 'bed', folder: 'beds', name, x, y, w, h, rot: 0, raised: 0.3, ...extra });
 const plant = (id, name, crop, x, y, sow, harvest, extra = {}) => ({ id, kind: 'plant', folder: 'planting', name, crop, x, y, sow, harvest, ...extra });
@@ -31,4 +32,5 @@ function backyard() {
     ],
   };
 }
-export const DEMOS = [{ key: 'backyard', name: 'Backyard veg patch', note: '16 x 12 m: raised beds as blocks, pumpkins, garlic, tank and drip line', make: () => cleanPlan(backyard()) }];
+export const DEMOS = [{ key: 'backyard', name: 'Backyard veg patch', note: '16 x 12 m: raised beds as blocks, pumpkins, garlic, tank and drip line', make: () => cleanPlan(backyard()) },
+  { key: 'farm', name: 'Showcase farm (50 acres)', note: '500 x 420 m: rolling ground, dam and swales, orchards, vineyard, crop fields, house, sheds, glasshouses, kitchen garden, food forest', make: () => cleanPlan(farm()) }];

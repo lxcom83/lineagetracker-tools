@@ -545,7 +545,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const doFind = () => { const q = findIn.value.trim(), ids = matches(q), idSet = new Set(ids); setGlow(ids); findMsg.textContent = !q ? '' : ids.length ? ids.length + ' found, glowing in gold' : 'Nothing matches that in this plan'; const L = labels.find(l => idSet.has(l.id)); if (ids.length && L) flyTo({ tx: clamp(L.x, 0, site.w), tz: clamp(L.z, 0, site.h), dist: Math.max(8, Math.min(st.dist, diag * 0.5)) }); };
   findIn.addEventListener('input', () => { clearTimeout(findIn._t); findIn._t = setTimeout(doFind, 180); });
   findIn.addEventListener('keydown', e => { if (e.key === 'Escape' && findIn.value) { e.stopPropagation(); e.preventDefault(); findIn.value = ''; doFind(); } else if (e.key === 'Enter') { e.preventDefault(); clearTimeout(findIn._t); doFind(); } });
-  growCb.addEventListener('change', () => { if (growCb.checked) cntCb.checked = false; setSubs(); }); cntCb.addEventListener('change', () => { if (cntCb.checked) growCb.checked = false; setSubs(); });
+  const needNames = () => { if ((growCb.checked || cntCb.checked) && !labCb.checked) { labCb.checked = true; labCb.dispatchEvent(new Event('change')); } };   // the text sits under the names, so ticking it turns names on
+  growCb.addEventListener('change', () => { if (growCb.checked) cntCb.checked = false; setSubs(); needNames(); }); cntCb.addEventListener('change', () => { if (cntCb.checked) growCb.checked = false; setSubs(); needNames(); });
   const shot = async sharp => {
     const old = { pr: r.getPixelRatio(), sh: r.shadowMap.enabled }, wasLab = showLabels;
     const w = cv.clientWidth, h = cv.clientHeight, want = sharp ? Math.min(3, 4096 / Math.max(w, h)) : Math.min(2, window.devicePixelRatio || 1);
