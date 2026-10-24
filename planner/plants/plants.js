@@ -593,7 +593,7 @@ export function extent(spec, stage=1){
   if(spec.kind==='rosette'||spec.kind==='leafy'){ return {h:spec.height*(0.2+0.8*st), r:spec.spread*0.5*(0.35+0.65*st)}; }
   const h=spec.height*(0.1+0.9*st); return {h, r:Math.max(0.25,h*(spec.kind==='stalk'?0.18:0.3))};
 }
-// Very cheap stand-in for far-away plants: a trunk and one blob (tree), a low mound (vine, rosette) or a leafy blob (bush, stalk).
+// Very cheap stand-in for far-away plants: a trunk and one blob (tree), a low mound (vine, rosette), a leafy blob (bush) or a thin stalk with a tuft of blades (corn, sunflower).
 // Under 60 triangles. Same colours as the real plant so a field does not change colour as you zoom.
 export function proxyGeometry(spec, stage=1){
   const M=new Mesh(PROFILES.lod1), e=extent(spec,stage), lc=mix(hex(spec.leaf.color),hex(spec.leaf.color2),0.5), bark=hex(spec.bark||'#6b4a2b');
@@ -606,9 +606,21 @@ export function proxyGeometry(spec, stage=1){
   else if(spec.kind==='banana'){ M.tube([V(0,0,0),V(0,e.h*0.6,0)],(spec.trunk||0.12),(spec.trunk||0.12)*0.8,mix(bark,lc,0.5),4); blob(e.h*0.68,e.h*0.33,e.r); }
   else if(spec.kind==='climber'){ const H=spec.height||1.8; M.tube([V(0,0,0),V(0,H,0)],0.04,0.03,bark,4); blob(H+(e.h-H)*0.4,Math.max(0.3,(e.h-H)*0.6+0.25),e.r,spec.train==='canopy'?e.r:Math.min(e.r,0.45)); }   // a trained vine is a thin wall along its wire, not a ball
   else if(spec.kind==='leafy') leafyProxy(M,spec,e,lc);
+  else if(spec.kind==='stalk') stalkProxy(M,spec,e,lc,bark,stage);
   else if(spec.kind==='vine'||spec.kind==='rosette') blob(e.h*0.35,e.h*0.5,e.r);
   else blob(e.h*0.5,e.h*0.5,e.r);
   return M.geometry();
+}
+
+// far-away corn, sunflowers and other stalks: a thin stalk with a tuft of drooping blades (not a fat blob, so a field looks like corn and not like bushes)
+function stalkProxy(M,spec,e,lc,bark,stage){
+  const dark=mix(lc,[0.05,0.12,0.05],0.35), tipc=mix(lc,[1,1,0.8],0.2), st=mix(bark,lc,0.6);
+  M.tube([V(0,0,0),V(0,e.h*0.92,0)],0.012,0.008,st,3);   // thin: the far-away shape is stretched sideways to the plant's real width
+  const N=8;
+  for(let k=0;k<N;k++){ const a=k/N*6.283+(k%2)*0.4, yb=e.h*(0.22+0.5*((k*3)%N)/N), reach=e.r*(0.75+0.25*((k*5)%N)/N), w=Math.max(0.03,e.r*0.16);
+    const tip=V(Math.cos(a)*reach,yb+e.h*0.03,Math.sin(a)*reach), s=V(-Math.sin(a)*w,0,Math.cos(a)*w);
+    const b0=M.vert(V(0,yb,0).add(s),dark), b1=M.vert(V(0,yb,0).sub(s),dark), t=M.vert(tip,tipc); M.tri(b0,b1,t); }   // one side only: the material draws both sides, and a doubled triangle would scramble the light
+  const fr=spec.fruit; if(stage>0.6&&fr&&fr.count&&fr.shape&&fr.shape.kind==='head'){ const hc=hex(fr.colorRipe||'#f0b81a'), cc=hex(fr.colorSecondary||'#4a2a12'), R=Math.min(0.12,e.r*0.25), c=M.vert(V(0,e.h*0.95,0),cc); const K=6, ring=[...Array(K)].map((_,i)=>M.vert(V(Math.cos(i/K*6.283)*R,e.h*0.93,Math.sin(i/K*6.283)*R),hc)); for(let i=0;i<K;i++){ M.tri(c,ring[(i+1)%K],ring[i]); } }
 }
 
 // far-away leafy plants: a jagged leafy mound (head colour in the middle for cabbages and cauliflowers), or a tuft of blades for onions and leeks
