@@ -160,7 +160,7 @@ export class PlantField {
           else if(pl>L){ if(px < T[pl-1]*1.25){ L = pl; stay = true; } }
           else stay = pl<3;
         }
-        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), px, key:stay?px*1.25:px, blk:s===1?b:null, idx:s===1?r*b.cols+c:-1, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
+        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), px, key:stay?k*1.25:k, blk:s===1?b:null, idx:s===1?r*b.cols+c:-1, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
       };
       const leaf=(rA,rB,cA,cB)=>{      // plants rA..rB, cA..cB inclusive, all about the same distance away
         const mr=(rA+rB)/2, mc=(cA+cB)/2; this.pos(b,mr,mc,tmp);
@@ -194,9 +194,10 @@ export class PlantField {
       const list=cand[L]; if(!list.length) continue;
       list.sort((a,b)=>b.key-a.key);
       const keep=[];
+      const blocked=new Set();     // a species that has run out of room at this level stops here: everything of it that is farther away drops too, so the nearest plants never lose to farther ones
       for(const e of list){ const cost=this.species[e.sp].tris[L];
-        if(keep.length<caps[L] && used+cost<=lim[L]){ keep.push(e); used+=cost; }
-        else { cand[L+1].push(e); stats.demoted++; } }
+        if(!blocked.has(e.sp) && keep.length<caps[L] && used+cost<=lim[L]){ keep.push(e); used+=cost; }
+        else { blocked.add(e.sp); cand[L+1].push(e); stats.demoted++; } }
       cand[L]=keep;
     }
     if(cand[3].length>caps[3]){      // far too many tiny ones: keep an even share

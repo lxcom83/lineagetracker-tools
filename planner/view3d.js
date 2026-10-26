@@ -13,7 +13,12 @@
 import { el, icon } from '../kit/core.js';
 import { openShare } from './share.js';
 
-export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '' }) {
+export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '', grown = false }) {
+  const planIn = plan;
+  if (grown) {   // every planting drawn at full size: take away the sowing and harvest dates (no date means fully grown)
+    plan = JSON.parse(JSON.stringify(planIn)); const strip = L => (L || []).forEach(it => { if (it && (it.kind === 'plant' || it.kind === 'rows')) { if (M.growth(it, date) === null) it.off = true; else { delete it.sow; delete it.harvest; } } });   // what is in the ground on the plan date is shown fully grown; crops already finished or not yet sown stay out, so they do not stack on top of each other
+    strip(plan.items); for (const b of Object.values(plan.blocks || {})) strip(b.items);
+  }
   const THREE = await import('./plants/vendor/three.module.js');
   const { PRESETS, stats: geoStats, specFromJSON, specToJSON } = await import('./plants/plants.js');
   const F = await import('./plants/field.js');
@@ -47,10 +52,11 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   // the side panel: find, what to show, the view controls
   const findIn = el('input', { type: 'search', class: 'v3-find', placeholder: 'Find a plant or variety…', 'aria-label': 'Find a plant or variety', autocomplete: 'off', maxlength: '60', value: findStart }), findMsg = el('p', { class: 'small muted', role: 'status' });
   const growCb = el('input', { type: 'checkbox', 'aria-label': 'Show what is growing in each bed' }), cntCb = el('input', { type: 'checkbox', 'aria-label': 'Show how many of each' });
+  const grownCb = el('input', { type: 'checkbox', checked: !!grown });
   const sec = (t, kids) => el('section', { class: 'v3-sec' }, [el('h3', { text: t }), ...kids]);
   const side = el('aside', { class: 'v3-side', 'aria-label': 'View options', hidden: !panelOpen }, [
     sec('Find', [findIn, findMsg]),
-    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each'])]),
+    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each']), el('label', { class: 'small v3-chk', title: 'Ignore the date: draw every planting at its full, grown size, to see how the garden will look when mature' }, [grownCb, ' Show everything fully grown'])]),
     sec('View', [el('label', { class: 'small' }, ['Quality ', qSel]), el('label', { class: 'small' }, ['View distance ', rangeSel]), el('label', { class: 'small' }, ['Projection ', projSel]), exLbl, el('label', { class: 'small' }, ['Sun ', hourIn])]),
     info, help]);
   const homeB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Home view (H)', 'aria-label': 'Home view' }, [navIcon('home')]);
@@ -683,7 +689,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   };
   document.addEventListener('keydown', key, true); closeB.addEventListener('click', close);
   rangeSel.addEventListener('change', () => { try { localStorage.setItem('ltplanner.range3d', rangeSel.value); } catch {} dirty = true; schedule(); });
-  exSel.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value }).then(close, () => { exSel.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
+  grownCb.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; grownCb.disabled = true; exSel.disabled = true; grownCb.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan: planIn, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value, grown: grownCb.checked }).then(close, () => { grownCb.disabled = false; exSel.disabled = false; wrap.style.opacity = ''; }); });
+  exSel.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; grownCb.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan: planIn, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value, grown: grownCb.checked }).then(close, () => { exSel.disabled = false; grownCb.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
   window.__v3close = close; schedule(); cv.focus();
   return { close };
 }
