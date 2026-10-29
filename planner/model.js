@@ -32,8 +32,10 @@
 
 import { GUIDES, PACKS, ISOLATION } from './guides.js';
 import { unpackGrid } from './terrain.js';
+import { cleanPoly, selfIntersects, area as polyArea } from './outline.js';
+import { crossesItself, MAX_RETAIN_WALLS, MAX_RETAIN_PTS, RETAIN_MIN_H, RETAIN_MAX_H } from './earthworks.js';
 import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
-export const FORMAT = 'lt-planner-plan', VERSION = 1, EXT = '.ltplan';
+export const FORMAT = 'lt-planner-plan', VERSION = 3, EXT = '.ltplan';
 export const FOLDERS = [
   ['ground', 'Ground'], ['models', 'Buildings and models'], ['structures', 'Structures'], ['beds', 'Beds and areas'],
   ['planting', 'Planting'], ['water', 'Water'], ['animals', 'Animals'],
@@ -53,7 +55,9 @@ export const KINDS = {
   building: { name: 'Building', folder: 'structures', box: true }, greenhouse: { name: 'Greenhouse', folder: 'structures', box: true },
   pergola: { name: 'Pergola', folder: 'structures', box: true },
   trellis: { name: 'Trellis', folder: 'structures', line: true }, wall: { name: 'Retaining wall', folder: 'structures', line: true },
+  shape: { name: 'Free-form shape', folder: 'beds', line: true, poly: true },
 };
+export const SHAPE_STYLES = ['bed', 'area', 'building', 'pond'];
 export const ROOFS = ['gable', 'hip', 'flat', 'skillion'], COVERS = ['open', 'shade', 'vine', 'roof'], FENCE_STYLES = ['palings', 'pickets', 'slats', 'wire', 'panels'],
   TRELLIS_STYLES = ['wire', 'lattice', 'mesh'], WALL_MATERIALS = ['sleeper', 'stone', 'block', 'brick'];
 const hexOr = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : d), pick = (v, list) => (list.includes(v) ? v : list[0]);
@@ -93,14 +97,33 @@ function cleanItem(it, ids, defs) {
       o.remind = Number.isInteger(+it.remind) ? Math.min(60, Math.max(0, +it.remind)) : 3;
     }
   } else if (k.line) {
-    const pts = (Array.isArray(it.pts) ? it.pts : []).slice(0, 500).filter(p => Array.isArray(p)).map(p => [r3(num(p[0], 0)), r3(num(p[1], 0))]);
-    if (pts.length < 2) return null;
+    const pts = (Array.isArray(it.pts) ? it.pts : []).slice(0, 500).filter(p => Array.isArray(p) && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])) && p[0] !== null && p[1] !== null && p[0] !== '' && p[1] !== '').map(p => [r3(num(p[0], 0)), r3(num(p[1], 0))]);
+    if (pts.length < (k.poly ? 3 : 2)) return null;
+    if (k.poly) {   // a closed outline of any shape: needs a real area and no crossing sides
+      if (pts.length > 100 || selfIntersects(pts) || Math.abs(polyArea(pts)) < 0.01) return null;
+      o.style = SHAPE_STYLES.includes(it.style) ? it.style : 'bed';
+      if (/^#[0-9a-fA-F]{6}$/.test(it.fill || '')) o.fill = it.fill;
+      if (o.style === 'bed') { o.raised = r3(num(it.raised, 0, 0, 1.5)); }
+      if (o.style === 'area' && SURFACE_KEYS.includes(it.surface)) o.surface = it.surface;
+      if (o.style === 'building') { o.wallH = r3(num(it.wallH, 2.7, 0.5, 12)); o.wallColour = hexOr(it.wallColour, '#d8d2c4'); o.roofColour = hexOr(it.roofColour, '#8a5a44'); }
+    }
     o.pts = pts;
     if (it.kind === 'path') o.width = r3(num(it.width, 0.9, 0.1, 20));
     if (it.kind === 'path' && SURFACE_KEYS.includes(it.surface)) o.surface = it.surface;
     if (it.kind === 'fence') { o.height = r3(num(it.height, 1.2, 0.1, 6)); if (FENCE_STYLES.includes(it.style) && it.style !== 'palings') o.style = it.style; if (/^#[0-9a-fA-F]{6}$/.test(it.colour || '')) o.colour = it.colour; }
     if (it.kind === 'trellis') Object.assign(o, { height: r3(num(it.height, 1.8, 0.3, 5)), style: pick(it.style, TRELLIS_STYLES) });
-    if (it.kind === 'wall') Object.assign(o, { height: r3(num(it.height, 0.6, 0.1, 4)), material: pick(it.material, WALL_MATERIALS) });
+    if (it.kind === 'wall') {
+      Object.assign(o, { height: r3(num(it.height, 0.6, 0.1, 4)), material: pick(it.material, WALL_MATERIALS) });
+      const rt = it.retain;   // optional: this wall holds back soil (see earthworks.js); anything wrong with it and the wall simply stays an ordinary wall
+      if (rt && typeof rt === 'object' && !Array.isArray(rt) && (rt.high === 'left' || rt.high === 'right') && pts.length <= MAX_RETAIN_PTS && !crossesItself(pts) && pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0) >= 0.5) {
+        o.height = r3(Math.min(RETAIN_MAX_H, Math.max(RETAIN_MIN_H, o.height)));
+        const r = { high: rt.high, split: Math.round(num(rt.split, 0.5, 0, 1) * 20) / 20 };
+        if (rt.lvl != null && rt.lvl !== '' && Number.isFinite(Number(rt.lvl))) r.lvl = r3(num(rt.lvl, 0, -1000, 10000));
+        if (rt.reach != null && Number.isFinite(Number(rt.reach))) r.reach = r3(num(rt.reach, 4, 0.5, 30));
+        if (rt.follow === true) r.follow = true;
+        o.retain = r;
+      }
+    }
   } else {
     Object.assign(o, { x: r3(num(it.x, 0)), y: r3(num(it.y, 0)) });
     if (it.kind === 'plant') {
@@ -153,6 +176,11 @@ export function cleanPlan(p) {
   for (const k of Object.keys(out.blocks)) out.blocks[k].items = out.blocks[k].items.filter(it => it.kind !== 'block' || !reaches(out.blocks, it.def, k));
   out.items = (Array.isArray(p.items) ? p.items : []).slice(0, 5000).map(it => cleanItem(it, ids, defIds)).filter(Boolean);
   { const vs = cleanVarieties(p.varieties); if (Object.keys(vs).length) out.varieties = vs; }
+  { const hs = s.heightScale == null ? 1 : r3(num(s.heightScale, 1, 0.5, 2)); if (hs !== 1) out.site.heightScale = hs; }   // plan-wide plant height scale; absent = 1
+  { const poly = cleanPoly(s.poly, out.site.w, out.site.h); if (poly) { out.site.poly = poly; out.version = 2; } else out.version = 1; }
+  { let n = 0; for (const i of out.items) if (i.retain && ++n > MAX_RETAIN_WALLS) { delete i.retain; } }   // bounds the work a hostile file can ask for
+  if (out.items.some(i => i.kind === 'wall' && i.retain) || Object.values(out.blocks).some(b => b.items.some(i => i.kind === 'wall' && i.retain))) out.version = 3;
+  else if (out.items.some(i => i.kind === 'shape') || Object.values(out.blocks).some(b => b.items.some(i => i.kind === 'shape'))) out.version = 2;   // older apps would drop free-form shapes   // only a plan with an outline needs a newer app; rectangle plans stay version 1
   return out;
 }
 /* does block `from` contain block `target`, directly or deeper? */
@@ -320,6 +348,8 @@ export function sunAt(dateISO, hour, lat) {
 export const sunPath = (dateISO, lat) => { const out = []; for (let h = 4; h <= 20; h += 0.5) { const s = sunAt(dateISO, h, lat); if (s.el > 0) out.push(Object.assign(s, { h })); } return out; };
 
 /* ---------- what goes to the app (a plan-for-the-app file; the app imports it with a review list) ---------- */
+const isBedLike = it => it.kind === 'bed' || it.kind === 'bench' || (it.kind === 'shape' && it.style === 'bed');   // a free-form garden bed counts as a bed
+const boxOf = it => { if (!it.pts) return { w: it.w, h: it.h, x: it.x, y: it.y }; const xs = it.pts.map(q => q[0]), ys = it.pts.map(q => q[1]); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const v of xs) { if (v < x0) x0 = v; if (v > x1) x1 = v; } for (const v of ys) { if (v < y0) y0 = v; if (v > y1) y1 = v; } return { w: r3(x1 - x0), h: r3(y1 - y0), x: r3((x0 + x1) / 2), y: r3((y0 + y1) / 2) }; };
 export function forApp(plan) {
   const all = [];
   const linkedBlocks = [];
@@ -330,7 +360,7 @@ export function forApp(plan) {
     location: { country: plan.site.country, zone: plan.site.zone },   // the app uses the guide for this same location
     // place: the app Place this bed is (the app updates it); no place = a new Place with this name.  A linked block copy
     // counts as one Place (e.g. "Tomato bed 2") holding everything inside it.
-    beds: all.filter(it => it.kind === 'bed' || it.kind === 'bench').map(it => ({ planId: it.id, name: it.name, kind: it.kind, w: it.w, h: it.h, x: it.x, y: it.y, place: it.place || '' }))
+    beds: all.filter(isBedLike).map(it => { const bx = boxOf(it); return { planId: it.id, name: it.name, kind: it.kind === 'shape' ? 'bed' : it.kind, w: bx.w, h: bx.h, x: bx.x, y: bx.y, place: it.place || '' }; })
       .concat(linkedBlocks.map(b => { const bb = bounds(b, plan); return { planId: b.id, name: b.name, kind: 'block', w: r3(bb[2] - bb[0]), h: r3(bb[3] - bb[1]), x: r3((bb[0] + bb[2]) / 2), y: r3((bb[1] + bb[3]) / 2), place: b.place }; })),
     sowings: all.filter(it => (it.kind === 'plant' || it.kind === 'rows') && it.sow).map(it => ({ planId: it.id, crop: CROPS[it.crop][0], variety: it.variety || '', sow: it.sow, harvest: it.harvest || '', link: it.link || '', bed: bedUnder(all, it), after: it.after || '', saveSeed: !!it.save })),
     // dated events for the app's calendar and reminders (the app asks before adding them)
@@ -338,7 +368,7 @@ export function forApp(plan) {
   };
 }
 function bedUnder(all, p) {
-  const b = all.find(it => (it.kind === 'bed' || it.kind === 'bench') && (() => { const [x, y] = rotPt([p.x - it.x, p.y - it.y], -it.rot); return Math.abs(x) <= it.w / 2 && Math.abs(y) <= it.h / 2; })());
+  const b = all.find(it => isBedLike(it) && inBed(it, p));
   return b ? b.id : '';
 }
 
@@ -426,7 +456,7 @@ export function linkPlaces(plan, places) {
 /* Fill a bed (or bench) with one crop at the guide's spacing: rows along the longer side, half a spacing in from each edge.
    Plants already in the bed stay.  Returns the new plants (at most 400). */
 export function fillBed(plan, items, bedId, crop, date) {
-  const bed = items.find(it => it.id === bedId && (it.kind === 'bed' || it.kind === 'bench')); if (!bed) return [];
+  const bed = items.find(it => it.id === bedId && isBedLike(it)); if (!bed) return [];
   const g = GUIDES[crop] || GUIDES.other, c = CROPS[GUIDES[crop] ? crop : 'other'];
   const long = bed.w >= bed.h, L = long ? bed.w : bed.h, Wd = long ? bed.h : bed.w;
   const along = Math.max(0.03, g[3]), across = Math.max(0.05, Math.min(g[4], Wd));
@@ -475,8 +505,11 @@ export const ROTATION_YEARS = 3;   // a common home-garden rule: the same family
 const FAMILY_NAMES = { Solanaceae: 'tomato family', Cucurbitaceae: 'pumpkin family', Fabaceae: 'bean and pea family', Brassicaceae: 'cabbage family', Amaryllidaceae: 'onion family', Apiaceae: 'carrot family', Amaranthaceae: 'beet and spinach family', Asteraceae: 'lettuce family', Poaceae: 'grass family (corn)', Lamiaceae: 'mint family (basil)', Rosaceae: 'rose family', Convolvulaceae: 'sweet potato family' };
 export const familyOf = crop => (GUIDES[crop] || GUIDES.other)[1];
 export const familyName = f => FAMILY_NAMES[f] || f;
-const inBed = (bed, p) => { const [x, y] = rotPt([p.x - bed.x, p.y - bed.y], -bed.rot); return Math.abs(x) <= bed.w / 2 && Math.abs(y) <= bed.h / 2; };
+const inBed = (bed, p) => {
+  if (bed.pts) return pip([p.x, p.y], bed.pts);
+  const [x, y] = rotPt([p.x - bed.x, p.y - bed.y], -bed.rot); return Math.abs(x) <= bed.w / 2 && Math.abs(y) <= bed.h / 2; };
 /* What is growing in a bed, greenhouse or bench on `date` (items = the flat list of plan items): [{ crop, name, variety, n }], most plants first */
+const pip = ([x, y], q) => { let c = false; for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > y) !== (q[j][1] > y) && x < (q[j][0] - q[i][0]) * (y - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c; return c; };
 export function growingIn(items, bed, date) {
   const by = new Map();
   for (const it of items) {
@@ -495,7 +528,7 @@ export function bedHistory(items, bed) {
    'mixed' groups are left out).  Returns [{ id, crop, sow, harvest, until }] where until is the first date the family may come back. */
 export function rotationIssues(items, plant) {
   const fam = familyOf(plant.crop); if (!plant.sow || fam === 'mixed' || !(GUIDES[plant.crop] || [])[6]) return [];
-  const bed = items.find(it => (it.kind === 'bed' || it.kind === 'bench') && !it.off && inBed(it, plant)); if (!bed) return [];
+  const bed = items.find(it => isBedLike(it) && !it.off && inBed(it, plant)); if (!bed) return [];
   const t = dnum(plant.sow), seen = new Set(), out = [];
   for (const h of bedHistory(items, bed)) {
     if (h.id === plant.id || h.family !== fam || !(GUIDES[h.crop] || [])[6]) continue;

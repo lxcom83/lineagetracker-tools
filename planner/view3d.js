@@ -12,12 +12,18 @@
    to swing round to it.  Home and Fit buttons sit beside it. */
 import { el, icon } from '../kit/core.js';
 import { openShare } from './share.js';
+import * as OL from './outline.js';
+import * as EW from './earthworks.js';   // imported directly, like outline.js, so a view opened after an update never meets old code   // imported directly (not through model.js) so a view opened after an update never meets old code
 
-export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '', grown = false }) {
+export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '', grown = false, years = 0 }) {
   const planIn = plan;
   if (grown) {   // every planting drawn at full size: take away the sowing and harvest dates (no date means fully grown)
     plan = JSON.parse(JSON.stringify(planIn)); const strip = L => (L || []).forEach(it => { if (it && (it.kind === 'plant' || it.kind === 'rows')) { if (M.growth(it, date) === null) it.off = true; else { delete it.sow; delete it.harvest; } } });   // what is in the ground on the plan date is shown fully grown; crops already finished or not yet sown stay out, so they do not stack on top of each other
     strip(plan.items); for (const b of Object.values(plan.blocks || {})) strip(b.items);
+    if (years > 0) {   // trees and the like are young: about 8 years to full size, starting at a fifth of it
+      const f = Math.min(1, 0.2 + 0.8 * years / 8), young = L => (L || []).forEach(it => { const c = it && it.kind === 'plant' && M.CROPS[it.crop]; if (c && c[1] === 'tree') { it.spread = Math.max(0.3, (it.spread || c[2]) * f); it.height = Math.max(0.3, (it.height || c[3]) * f); } });
+      young(plan.items); for (const b of Object.values(plan.blocks || {})) young(b.items);
+    }
   }
   const THREE = await import('./plants/vendor/three.module.js');
   const { PRESETS, stats: geoStats, specFromJSON, specToJSON } = await import('./plants/plants.js');
@@ -26,7 +32,9 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const SF = await import('./surfaces.js');
   const site = plan.site, g = site.ground ? TR.unpackGrid(site.ground) : null, base = g ? TR.range(g).min : 0;
   ex = [1, 2, 3, 5].includes(+ex) ? +ex : 1;   // heights can be stretched to make gentle slopes easier to see (the ground only; everything still sits on it)
-  const ground = g ? (x, z) => (TR.heightAt(g, x, z) - base) * ex : () => 0;
+  const fin = window.__noWalls3D ? null : EW.makeFinished(site, plan);   // soil-holding walls reshape the ground: every height below comes from the finished ground
+  const hasWalls = !!(fin && fin.count && !fin.limited);
+  const ground = hasWalls ? (x, z) => (fin.heightAt(x, z) - base) * ex : g ? (x, z) => (TR.heightAt(g, x, z) - base) * ex : () => 0;
   const D2R = Math.PI / 180, clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   /* ---- page ---- */
@@ -53,10 +61,11 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const findIn = el('input', { type: 'search', class: 'v3-find', placeholder: 'Find a plant or variety…', 'aria-label': 'Find a plant or variety', autocomplete: 'off', maxlength: '60', value: findStart }), findMsg = el('p', { class: 'small muted', role: 'status' });
   const growCb = el('input', { type: 'checkbox', 'aria-label': 'Show what is growing in each bed' }), cntCb = el('input', { type: 'checkbox', 'aria-label': 'Show how many of each' });
   const grownCb = el('input', { type: 'checkbox', checked: !!grown });
+  const yearsSel = el('select', { 'aria-label': 'Trees at this age', disabled: !grown, title: 'Trees and orchard plants at this age (about 8 years to full size). Other plants show fully grown.' }, [[0, 'Everything fully grown'], [1, 'Trees at 1 year'], [3, 'Trees at 3 years'], [5, 'Trees at 5 years']].map(([v, l]) => el('option', { value: v, text: l, selected: v === years })));
   const sec = (t, kids) => el('section', { class: 'v3-sec' }, [el('h3', { text: t }), ...kids]);
   const side = el('aside', { class: 'v3-side', 'aria-label': 'View options', hidden: !panelOpen }, [
     sec('Find', [findIn, findMsg]),
-    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each']), el('label', { class: 'small v3-chk', title: 'Ignore the date: draw every planting at its full, grown size, to see how the garden will look when mature' }, [grownCb, ' Show everything fully grown'])]),
+    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each']), el('label', { class: 'small v3-chk', title: 'Ignore the date: draw every planting at its full, grown size, to see how the garden will look when mature' }, [grownCb, ' Show everything fully grown']), yearsSel]),
     sec('View', [el('label', { class: 'small' }, ['Quality ', qSel]), el('label', { class: 'small' }, ['View distance ', rangeSel]), el('label', { class: 'small' }, ['Projection ', projSel]), exLbl, el('label', { class: 'small' }, ['Sun ', hourIn])]),
     info, help]);
   const homeB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Home view (H)', 'aria-label': 'Home view' }, [navIcon('home')]);
@@ -104,12 +113,25 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const hash = (i, j) => { const h = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return h - Math.floor(h); };
   const vnoise = (x, z) => { const i = Math.floor(x), j = Math.floor(z), fx = x - i, fz = z - j, u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz); return (hash(i, j) * (1 - u) + hash(i + 1, j) * u) * (1 - v) + (hash(i, j + 1) * (1 - u) + hash(i + 1, j + 1) * u) * v; };
   const speck = (x, z) => 0.65 * vnoise(x / 3.1, z / 3.1) + 0.35 * vnoise(x / 0.9, z / 0.9);
-  { const step = Math.max(g ? g.cell : 1, Math.max(site.w, site.h) / 200), nx = Math.max(2, Math.ceil(site.w / step) + 1), nz = Math.max(2, Math.ceil(site.h / step) + 1), pos = [], col = [], idx = [];
+  { const step = Math.max(hasWalls ? Math.min(g ? g.cell : 1, 0.25) : (g ? g.cell : 1), Math.max(site.w, site.h) / 200), nx = Math.max(2, Math.ceil(site.w / step) + 1), nz = Math.max(2, Math.ceil(site.h / step) + 1), pos = [], col = [], idx = [];
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const x = Math.min(site.w, i * step), z = Math.min(site.h, j * step), y = gy(x, z); pos.push(x, y, z);
       const s = g ? TR.slopeAt(g, x, z).pct : 0, t = Math.min(1, s / 60), hgt = g && span > 0.05 ? (y / ex) / span : 0.5, nz_ = speck(x, z);
       const c = new THREE.Color('#6f8f45').lerp(new THREE.Color('#5d8240'), Math.max(0, 0.3 - hgt) * 2).lerp(new THREE.Color('#8d9a55'), Math.max(0, hgt - 0.75) * 2.4).lerp(new THREE.Color('#8a6d3b'), t * 0.55);
       c.offsetHSL((nz_ - 0.5) * 0.025, 0, (nz_ - 0.5) * 0.07 + 0.04); col.push(c.r, c.g, c.b); }
     for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) { const a = j * nx + i; idx.push(a, a + nx, a + 1, a + 1, a + nx, a + nx + 1); }
+    const reg = OL.regionOf(site);
+    if (!reg.rect && !window.__noOutline3D) {   // an outline: keep the ground triangles that touch it, pull the outer ones onto the edge, and add a soil edge
+      const ins = []; for (let k = 0; k < pos.length / 3; k++) ins.push(OL.inside(reg, pos[k * 3], pos[k * 3 + 2], 0));
+      const kept = [], moved = new Set();
+      for (let k = 0; k < idx.length; k += 3) { const a = idx[k], b = idx[k + 1], c = idx[k + 2]; if (ins[a] || ins[b] || ins[c]) { kept.push(a, b, c); for (const q of [a, b, c]) if (!ins[q]) moved.add(q); } }
+      for (const q of moved) { const n = OL.nearest(reg, pos[q * 3], pos[q * 3 + 2]); pos[q * 3] = n[0]; pos[q * 3 + 2] = n[1]; pos[q * 3 + 1] = gy(n[0], n[1]); }
+      idx.length = 0; for (const q of kept) idx.push(q);   // not push(...kept): a big ground overflows the call stack
+      const ep = [], er = reg.outer, depth = 0.35;
+      for (let i = 0; i < er.length; i++) { const A = er[i], B = er[(i + 1) % er.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]), nn = Math.max(1, Math.ceil(L / step));
+        for (let k = 0; k < nn; k++) { const x0 = A[0] + (B[0] - A[0]) * k / nn, z0 = A[1] + (B[1] - A[1]) * k / nn, x1 = A[0] + (B[0] - A[0]) * (k + 1) / nn, z1 = A[1] + (B[1] - A[1]) * (k + 1) / nn, y0 = gy(x0, z0), y1 = gy(x1, z1);
+          ep.push(x0, y0, z0, x1, y1, z1, x0, y0 - depth, z0, x1, y1, z1, x1, y1 - depth, z1, x0, y0 - depth, z0); } }
+      const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(ep, 3)); eg.computeVertexNormals(); const em = new THREE.Mesh(eg, new THREE.MeshStandardMaterial({ color: '#6b4f33', roughness: 1, side: THREE.DoubleSide })); em.userData.edgeStrip = true; scene.add(em);
+    }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx); geo.computeVertexNormals();
     planarUV(geo, SF.SURFACES.detail.metres); groundMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, map: tex('detail'), roughness: 0.95, side: THREE.DoubleSide })); scene.add(groundMesh); }
 
@@ -308,9 +330,41 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     if (surface) { const m = SF.SURFACES[surface].metres, uv = []; let run = 0; P.forEach((p, i) => { if (i) run += Math.hypot(p[0] - P[i - 1][0], p[1] - P[i - 1][1]); uv.push(0, run / m, width / m, run / m); }); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); }
     solids.add(new THREE.Mesh(geo, surface ? surf(surface) : flat(colour)));
   }
+  // a free-form shape (any outline): a bed, an area, a building or a pond. The outline is cut into triangles; edges are split so the surface follows the ground.
+  function shape3D(it) {
+    const st = it.style || 'bed', P = it.pts, step = Math.max(0.5, OL.perimeter(P) / 240), ring = [];
+    P.forEach((a, i) => { const b = P[(i + 1) % P.length], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let k = 0; k < n; k++) ring.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); });
+    let tris; try { tris = THREE.ShapeUtils.triangulateShape(ring.map(q => new THREE.Vector2(q[0], q[1])), []); } catch (e) { tris = []; }
+    if (!tris.length) return;
+    const hs = ring.map(q => gy(q[0], q[1])), hi = Math.max(...hs), lo = Math.min(...hs);
+    const cap = (yOf, material, metres) => {
+      const pos = []; ring.forEach((q, i) => pos.push(q[0], yOf(i), q[1]));
+      const idx = []; for (const [a, b, c] of tris) { const up = (ring[b][1] - ring[a][1]) * (ring[c][0] - ring[a][0]) - (ring[b][0] - ring[a][0]) * (ring[c][1] - ring[a][1]); if (up >= 0) idx.push(a, b, c); else idx.push(a, c, b); }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+      if (metres) planarUV(geo, metres); solids.add(new THREE.Mesh(geo, material));
+    };
+    const walls = (y0, y1, colour) => {
+      const pos = [], idx = []; P.forEach((a, i) => { const b = P[(i + 1) % P.length], n = pos.length / 3; pos.push(a[0], y0, a[1], b[0], y0, b[1], b[0], y1, b[1], a[0], y1, a[1]); idx.push(n, n + 1, n + 2, n, n + 2, n + 3); });
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals(); solids.add(new THREE.Mesh(geo, flat(colour)));
+    };
+    if (st === 'bed') {
+      const R = it.raised || 0;
+      if (R < 0.02) { cap(i => hs[i] + 0.03, surf('soil'), SF.SURFACES.soil.metres); return; }
+      const top = hi + R; walls(lo - 0.05, top, TIMBER[0]); cap(() => top - 0.02, surf('soil'), SF.SURFACES.soil.metres); it.__top = top - 0.02;
+    } else if (st === 'area') {
+      const sf = it.surface || (it.fill ? null : SF.guessSurface(it)); const lift = 0.008 + Math.min(40, areaN++) * 0.0005;
+      cap(i => hs[i] + lift, sf ? lay(sf) : flat(it.fill || '#C9DDB8'), sf ? SF.SURFACES[sf].metres : 0);
+    } else if (st === 'pond') {
+      const lv = hi + 0.03; cap(() => lv, flat('#4b87b5')); walls(lo - 0.1, hi + 0.05, '#8a7a62');   // a low stone rim so the water sits in the ground
+    } else {
+      const floor = hi + 0.15, top = floor + (it.wallH || 2.7);
+      walls(lo - 0.1, top, it.wallColour || '#d8d2c4'); cap(() => top, flat(it.roofColour || '#8a5a44')); cap(() => top + 0.01, flat(it.roofColour || '#8a5a44')); it.__lab = top + 0.6;
+    }
+  }
   let areaN = 0;
   for (const it of all) {
-    if (it.kind === 'bed') bed(it);
+    if (it.kind === 'shape') shape3D(it);
+    else if (it.kind === 'bed') bed(it);
     else if (it.kind === 'area') drape(it, it.fill || '#C9DDB8', 0.008 + Math.min(40, areaN++) * 0.0005, 0, it.surface || SF.guessSurface(it));   // later areas sit a hair higher, so overlaps never flicker
     else if (it.kind === 'rows') drape(it, '#4f3a28', 0.03, -0.15, 'soil', false);   // crop rows stand in a bed of dug soil a little wider than the rows
     else if (it.kind === 'bench') {   // level top on legs that reach the ground
@@ -366,8 +420,9 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   groundMesh.receiveShadow = true; solids.traverse(o => { if (o.isMesh) { o.castShadow = !o.userData.glass; o.receiveShadow = !o.userData.glass; } });
   const setShadows = q => { const on = shadowsFor(q); if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; r.shadowMap.type = THREE.PCFSoftShadowMap; mats.forEach(m => { m.needsUpdate = true; }); surfMats.forEach(m => { m.needsUpdate = true; }); mat.needsUpdate = true; groundMesh.material.needsUpdate = true; } sun.castShadow = on; return on; };
   // plants that stand inside a raised bed sit on its soil, not on the ground under it
-  const beds = all.filter(it => (it.kind === 'bed' || it.kind === 'greenhouse') && it.__top !== undefined);
-  const inBed = (x, z) => { for (const b of beds) { const a = -(b.rot || 0) * D2R, dx = x - b.x, dz = z - b.y, u = dx * Math.cos(a) - dz * Math.sin(a), v = dx * Math.sin(a) + dz * Math.cos(a); if (b.shape === 'round' ? (u / (b.w / 2)) ** 2 + (v / (b.h / 2)) ** 2 <= 1 : Math.abs(u) <= b.w / 2 && Math.abs(v) <= b.h / 2) return b.__top; } return null; };
+  const beds = all.filter(it => (it.kind === 'bed' || it.kind === 'greenhouse' || it.kind === 'shape') && it.__top !== undefined);
+  const inBed = (x, z) => { for (const b of beds) { if (b.pts) { if (pip3(x, z, b.pts)) return b.__top; continue; } const a = -(b.rot || 0) * D2R, dx = x - b.x, dz = z - b.y, u = dx * Math.cos(a) - dz * Math.sin(a), v = dx * Math.sin(a) + dz * Math.cos(a); if (b.shape === 'round' ? (u / (b.w / 2)) ** 2 + (v / (b.h / 2)) ** 2 <= 1 : Math.abs(u) <= b.w / 2 && Math.abs(v) <= b.h / 2) return b.__top; } return null; };
+  const pip3 = (x, y, q) => { let c = false; for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > y) !== (q[j][1] > y) && x < (q[j][0] - q[i][0]) * (y - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c; return c; };
   const plantY = (x, z) => { const t = beds.length ? inBed(x, z) : null; return t === null ? gy(x, z) : t; };
 
   /* ---- plants: single plants and crop rows, as rules for the field drawer ---- */
@@ -379,13 +434,16 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const specs = Object.fromEntries([...used].map(k => [k, PRESETS[k]]));
   const fv = new FieldView(scene, mat, specs); fv.shadows = setShadows(qSel.value); fv.setDetail(1, qSel.value);
   const real = k => fv.size(k);   // measured from the drawn plant, so a 3 m tree is drawn 3 m wide
-  const blocks = [];
+  const blocks = [], hScale = Math.min(2, Math.max(0.5, +plan.site.heightScale || 1));   // plan-wide plant height scale (Plan panel)
   // size rows from the crop's usual height, except low wide heads (lettuce, cabbage, cauliflower, squash), which are sized from their usual spread
   for (const q of rules) { const e = real(q.species), c = M.CROPS[q.crop] || M.CROPS.other, sp_ = PRESETS[q.species], wide = sp_.kind === 'rosette' || (sp_.kind === 'leafy' && ['loose', 'head', 'curd'].includes(sp_.form || 'loose'));
-    /* a member's own variety is drawn exactly as designed */ const own = q.species.startsWith('v_'), ratio = own ? 1 : wide ? (c[2] || 2 * e.r) / (2 * e.r) : (c[3] || e.h) / e.h; blocks.push({ ...q, scale: Math.max(0.05, ratio * (0.2 + 0.8 * Math.min(1, Math.max(0.15, q.stage)))) }); }
+    /* a member's own variety is drawn exactly as designed */ const own = q.species.startsWith('v_'), ratio = own ? 1 : wide ? (c[2] || 2 * e.r) / (2 * e.r) : (c[3] || e.h) / e.h; blocks.push({ ...q, sy: hScale, scale: Math.max(0.05, ratio * (0.2 + 0.8 * Math.min(1, Math.max(0.15, q.stage)))) }); }
   const drawnH = {};   // how tall each single plant is drawn, so its label sits just above it
-  for (const [it, gr, k] of singles) { const e = real(k), sc = Math.max(0.05, (it.spread / (2 * e.r)) * (0.25 + 0.75 * gr)); drawnH[it.id] = e.h * sc;
-    blocks.push({ id: it.id, species: k, x: it.x, z: it.y, rows: 1, cols: 1, rowSpacing: 1, plantSpacing: 1, seed: 7, sizeVar: 0, scale: sc }); }
+  for (const [it, gr, k] of singles) { const e = real(k), sc = Math.max(0.05, (it.spread / (2 * e.r)) * (0.25 + 0.75 * gr));
+    /* a plant is stretched upwards only when its height differs from the crop's usual height (a taller or shorter line, set on the plant), then by the plan-wide height scale */
+    const usual = (M.CROPS[it.crop] || [])[3], own = String(k).startsWith('v_'), sy = Math.min(4, Math.max(0.25, (!own && usual > 0 && it.height > 0 ? it.height / usual : 1) * hScale));
+    drawnH[it.id] = e.h * sc * sy;
+    blocks.push({ id: it.id, species: k, x: it.x, z: it.y, rows: 1, cols: 1, rowSpacing: 1, plantSpacing: 1, seed: 7, sizeVar: 0, scale: sc, sy }); }
   const sp = {}; for (const k of used) { const e = real(k); sp[k] = { h: e.h, r: e.r, tris: [0, 1, 2].map(L => Math.round(geoStats(fv.geometry(k, L)).tris)).concat([8]) }; }
   const field = new F.PlantField({ quality: qSel.value, species: sp, blocks }); field.setGround(plantY);
   // the highest a plant top can be above the lowest ground: used to work out which part of the plan can show in the picture (the foreground was lost when the camera stood on a hill)
@@ -612,7 +670,26 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   cv.addEventListener('contextmenu', e => e.preventDefault());
   /* ---- Person view: stand on the ground at eye height and walk about ---- */
   let hintT = 0; const wkeys = new Set(), wpad = { x: 0, y: 0 };
-  const walkGo = (fwd, side) => { if (!walk) return; const wy = walk.yaw * D2R, fx = Math.sin(wy), fz = -Math.cos(wy); walk.x = clamp(walk.x + fx * fwd + -fz * side, 0.5, site.w - 0.5); walk.z = clamp(walk.z + fz * fwd + fx * side, 0.5, site.h - 0.5); st.tx = walk.x; st.tz = walk.z; schedule(); };
+  /* things you cannot walk through: building and greenhouse footprints, tanks, fences, walls and trellises (radius 0.3 m) */
+  let blockers = null; const WR = 0.3;
+  const segD = (x, z, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2)); return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz); };
+  const inPoly = (x, z, q) => { let c = false; for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > z) !== (q[j][1] > z) && x < (q[j][0] - q[i][0]) * (z - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c; return c; };
+  const buildBlockers = () => { const polys = [], lines = [];
+    for (const it of all) {
+      if (it.off || it.hidden) continue;
+      if (it.kind === 'building' || it.kind === 'greenhouse') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));
+      else if (it.kind === 'shape' && it.style === 'building') polys.push(it.pts);
+      else if (it.kind === 'shape' && it.style === 'pond' ) polys.push(it.pts);
+      else if (it.kind === 'tank') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [it.x + a * it.w / 2, it.y + b * it.w / 2]));
+      else if (it.kind === 'fence' || it.kind === 'wall' || it.kind === 'trellis') lines.push(it.pts);
+    }
+    return { polys, lines }; };
+  const blockedAt = (x, z) => { if (!blockers) blockers = buildBlockers(); for (const q of blockers.polys) if (inPoly(x, z, q) || q.some((a, i) => segD(x, z, a, q[(i + 1) % q.length]) < WR)) return true; for (const l of blockers.lines) for (let i = 1; i < l.length; i++) if (segD(x, z, l[i - 1], l[i]) < WR * 0.8) return true; return false; };
+  const walkGo = (fwd, side) => { if (!walk) return; const wy = walk.yaw * D2R, fx = Math.sin(wy), fz = -Math.cos(wy); { const nx = clamp(walk.x + fx * fwd + -fz * side, 0.5, site.w - 0.5), nz = clamp(walk.z + fz * fwd + fx * side, 0.5, site.h - 0.5), wr = OL.regionOf(site);
+    const free = (x, z) => (wr.rect || OL.inside(wr, x, z)) && (!enforce || !blockedAt(x, z));
+    const enforce = !blockedAt(walk.x, walk.z);   // already inside something (a plan edited while standing there): let the walker step out
+    if (free(nx, nz)) { walk.x = nx; walk.z = nz; } else if (free(nx, walk.z)) walk.x = nx; else if (free(walk.x, nz)) walk.z = nz; }   // with an outline you cannot walk out of it
+  st.tx = walk.x; st.tz = walk.z; schedule(); };
   function walkStep() {
     const now = performance.now(), dt = Math.min(0.25, (now - walk.t) / 1000); walk.t = now;
     let f = (wkeys.has('w') || wkeys.has('arrowup') ? 1 : 0) - (wkeys.has('s') || wkeys.has('arrowdown') ? 1 : 0) + -wpad.y, sd = (wkeys.has('d') ? 1 : 0) - (wkeys.has('a') ? 1 : 0) + wpad.x, tr = (wkeys.has('arrowleft') || wkeys.has('q') ? 1 : 0) - (wkeys.has('arrowright') || wkeys.has('e') ? 1 : 0);
@@ -626,6 +703,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     if (projSel.value === 'ortho') { projSel.value = 'persp'; }
     drag = null; pinch = null; orbitSave = { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; anim = null;
     walk = { x: clamp(st.tx, Math.min(1, site.w / 2), Math.max(site.w / 2, site.w - 1)), z: clamp(st.tz, Math.min(1, site.h / 2), Math.max(site.h / 2, site.h - 1)), yaw: st.yaw + 180, pitch: -4, t: performance.now(), run: false };
+    { const wr = OL.regionOf(site); if (!wr.rect && !OL.inside(wr, walk.x, walk.z)) { const q = OL.clampPoint(wr, [walk.x, walk.z]); walk.x = q[0]; walk.z = q[1]; } }
     st.dist = 40; walkB.setAttribute('aria-pressed', 'true'); walkB.classList.add('on'); pad.hidden = false; runB.hidden = false; walkHint.hidden = false; clearTimeout(hintT); hintT = setTimeout(() => { walkHint.hidden = true; }, 6000); schedule();
   }
   function exitWalk() {
@@ -644,7 +722,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const dropKeys = () => { wkeys.clear(); wpad.x = wpad.y = 0; padKnob.style.transform = ''; };
   const visCh = () => { if (document.hidden) dropKeys(); };
   document.addEventListener('keyup', keyUp, true); addEventListener('blur', dropKeys); document.addEventListener('visibilitychange', visCh);
-  window.__v3walk = { owner: wrap, get: () => walk && { x: walk.x, z: walk.z, yaw: walk.yaw, pitch: walk.pitch, eye: [persp.position.x, persp.position.y, persp.position.z] }, enter: enterWalk, exit: exitWalk, ground: gy };
+  window.__v3walk = { owner: wrap, get: () => walk && { x: walk.x, z: walk.z, yaw: walk.yaw, pitch: walk.pitch, eye: [persp.position.x, persp.position.y, persp.position.z] }, enter: enterWalk, exit: exitWalk, ground: gy, blocked: blockedAt, place: (x, z, yaw) => { if (walk) { walk.x = x; walk.z = z; walk.yaw = yaw; schedule(); } } };
   homeB.addEventListener('click', home); fitB.addEventListener('click', fit); topB.addEventListener('click', topView);
   /* ---- side panel, find, show ticks, share picture ---- */
   const setPanel = on => { panelOpen = on; side.hidden = !on; panelB.setAttribute('aria-expanded', String(on)); try { localStorage.setItem('ltplanner.v3panel', on ? 'open' : 'closed'); } catch {} schedule(); setTimeout(schedule, 60); };
@@ -674,7 +752,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   let closed = false;
   const close = () => { if (closed) return; closed = true; cancelAnimationFrame(raf); clearTimeout(glowTimer); glowMats.length = 0; slabMat.dispose(); beamMat.dispose(); removeEventListener('resize', schedule); document.removeEventListener('keyup', keyUp, true); removeEventListener('blur', dropKeys); document.removeEventListener('visibilitychange', visCh); clearTimeout(hintT); if (window.__v3walk && window.__v3walk.owner === wrap) delete window.__v3walk; document.removeEventListener('keydown', key, true); walk = null; fv.dispose(); mats.forEach(m => m.dispose()); mat.dispose(); surfMats.forEach(m => m.dispose()); texs.forEach(t => t.dispose()); groundMesh.material.dispose();
     cubeMats.forEach(m => { m.map.dispose(); m.dispose(); }); cube.traverse(o => { if (o.isSprite) { o.material.map.dispose(); o.material.dispose(); } }); cube.geometry.dispose(); cubeEdges.geometry.dispose(); hover.geometry.dispose();
-    scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); r.dispose(); wrap.remove(); };
+    scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.userData && o.userData.edgeStrip) o.material.dispose(); }); r.dispose(); wrap.remove(); };
   const key = e => {
     if (e.key === 'Escape') { if (e.target === findIn && findIn.value) return; if (walk) { e.preventDefault(); e.stopPropagation(); exitWalk(); return; } e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.target.closest && e.target.closest('select,input')) return;
@@ -689,8 +767,9 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   };
   document.addEventListener('keydown', key, true); closeB.addEventListener('click', close);
   rangeSel.addEventListener('change', () => { try { localStorage.setItem('ltplanner.range3d', rangeSel.value); } catch {} dirty = true; schedule(); });
-  grownCb.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; grownCb.disabled = true; exSel.disabled = true; grownCb.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan: planIn, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value, grown: grownCb.checked }).then(close, () => { grownCb.disabled = false; exSel.disabled = false; wrap.style.opacity = ''; }); });
-  exSel.addEventListener('change', () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; exSel.disabled = true; grownCb.disabled = true; wrap.style.opacity = '0.6'; open3D({ plan: planIn, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value, grown: grownCb.checked }).then(close, () => { exSel.disabled = false; grownCb.disabled = false; wrap.style.opacity = ''; }); });   // the new view opens on top first, then this one goes, so the plan screen never shows in between
+  const reopen = () => { const v = walk ? Object.assign({}, orbitSave) : { tx: st.tx, tz: st.tz, yaw: st.yaw, pitch: st.pitch, dist: st.dist }; const ctl = [grownCb, exSel, yearsSel]; ctl.forEach(c => { c.disabled = true; }); wrap.style.opacity = '0.6';
+    open3D({ plan: planIn, M, TR, date, ex: +exSel.value, keepView: v, find: findIn.value, grown: grownCb.checked, years: grownCb.checked ? +yearsSel.value : 0 }).then(close, () => { grownCb.disabled = false; exSel.disabled = false; yearsSel.disabled = !grownCb.checked; wrap.style.opacity = ''; }); };   // the new view opens on top first, then this one goes, so the plan screen never shows in between
+  grownCb.addEventListener('change', reopen); exSel.addEventListener('change', reopen); yearsSel.addEventListener('change', reopen);
   window.__v3close = close; schedule(); cv.focus();
   return { close };
 }

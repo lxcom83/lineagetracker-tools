@@ -11,6 +11,9 @@ import { parseGeoTiff } from './geotiff.js';
 import { fold, foldHeadings } from '../kit/fold.js';
 import { rowsFromApp } from '../print/model.js';
 import * as M from './model.js';
+import * as O from './outline.js';
+import * as DX from './dxf.js';
+import * as EW from './earthworks.js';
 import { DEMOS } from './demos.js';
 import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
 import { scanDialog, askAI, parseReplyJSON } from '../kit/ai.js';
@@ -21,7 +24,7 @@ const app = document.getElementById('app');
 const SVGNS = 'http://www.w3.org/2000/svg';
 const K = { doc: 'ltplanner_doc', prefs: 'ltplanner_prefs', lib: 'ltplanner_blocks', places: 'ltplanner_places' };
 const S = { show: (() => { try { const v = localStorage.getItem('ltplanner.show2d'); return ['grow', 'count'].includes(v) ? v : ''; } catch { return ''; } })(), find: '', pulse: null, contours: false, contourStep: 0.5, plan: null, sel: new Set(), tool: 'select', crop: 'tomato', ctx: null, open: {}, view: null, draft: null, sun: true, brush: { op: 'raise', size: 3, power: 1 } };
-let keepCb, setupT = 0, tabBtns = {}, prView, setupEl, mobEl, btn3d, hist, tree, svg, world, overlay, propsEl, blocksEl, calEl, placesEl, titleEl, undoB, redoB, dateIn, dateLbl, toolBtns = {};
+let odHud, hintEl, flyEl, ctlSel, keepCb, setupT = 0, tabBtns = {}, prView, setupEl, mobEl, btn3d, hist, tree, svg, world, overlay, propsEl, blocksEl, calEl, placesEl, titleEl, undoB, redoB, dateIn, dateLbl, toolBtns = {};
 
 /* the crop list in groups (from the plant database): vegetables, herbs, fruit, nuts, berries and vines, then the general choices */
 const CROP_GROUPS = [['vegetable', 'Vegetables'], ['herb', 'Herbs'], ['fruit', 'Fruit'], ['nut', 'Nut trees'], ['berry', 'Berries and vines'], ['law', 'Legal only in some places (check your local law)'], ['', 'General']];
@@ -48,12 +51,15 @@ const r2 = n => Math.round(n * 100) / 100;
   await loadConfig();
   const g = await gate('planner');
   if (!g.ok) { showGate(g.reason); return; }
+  let lastgoodNote = false;
   const saved = store.get(K.doc);
-  try { S.plan = saved ? M.cleanPlan(saved) : null; } catch { S.plan = null; }
+  try { S.plan = saved ? M.cleanPlan(saved) : null; } catch { S.plan = null; if (saved) { try { localStorage.setItem('ltplanner.lastgood', JSON.stringify(saved)); lastgoodNote = true; } catch { holdDoc = true; } } }   // a plan that would not open is kept aside, so the demo's first autosave cannot overwrite it
   if (!S.plan) S.plan = DEMOS[0].make();
   S.contours = !!S.plan.site.ground;
   const pl = store.get(K.places); S.places = pl && Array.isArray(pl.list) ? pl : { list: [], from: '' };
   build(g);
+  if (holdDoc) setTimeout(() => toast('Your last plan could not be opened here and there is no room to set it aside, so it is being left untouched and this sample plan will not be saved. Reload after the update, or download this plan with the menu. Starting a new plan or opening a file turns saving back on.', 12000), 1200);
+  if (lastgoodNote) setTimeout(() => toast('Your last plan could not be opened here (it may be from a newer version). It is kept aside on this device, not deleted: see Setup. Reload the page to update.', 9000), 1200);
   const due = M.dueSoon(S.plan, M.todayISO());
   if (due.length) setTimeout(() => toast((due.length === 1 ? 'Coming up: ' : due.length + ' things coming up, first: ') + due[0].title + ' (' + shortDay(due[0].date) + ')', 6000), g.preview ? 5600 : 800);
   if (g.preview) toast('LT-Planner is not open to everyone yet. You can try it because you are staff.', 5000);
@@ -77,11 +83,40 @@ function showGate(reason) {
 
 /* ---------- saving ---------- */
 let saveTimer = 0;
-function autosave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (!store.set(K.doc, S.plan)) toast('This plan is too big to keep in the browser. Download it as a file.', 6000); }, 400); }
+let holdDoc = false;   // set when a stored plan that would not open could not be set aside: autosave must not overwrite it
+function saveDoc() {
+  if (holdDoc) return true;
+  if (store.set(K.doc, S.plan)) return true;
+  for (let n = 0; n < RECENT_MAX + 1; n++) {   // no room: let go of the oldest Recent plan first, one at a time, and say so
+    const l = recentList(); if (!l.length) break; l.pop(); try { if (l.length) localStorage.setItem(RECENT_KEY, JSON.stringify(l)); else localStorage.removeItem(RECENT_KEY); } catch {}
+    if (store.set(K.doc, S.plan)) { toast('An older plan was removed from Recent plans to make room for this one.', 6000); return true; }
+  }
+  return false;
+}
+function autosave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (!saveDoc()) toast('This plan is too big to keep in the browser. Download it as a file.', 6000); }, 400); }
 function commit(key) { hist.commit(key); autosave(); drawAll(); }
 const exportPlan = () => M.pruneBlocks(M.cleanPlan(JSON.parse(JSON.stringify(S.plan))));
 const fileName = (ext = M.EXT) => (S.plan.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'plan') + ext;
-function loadPlan(p) { if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); S.plan = p; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
+/* the last few plans, kept on this device so Setup can bring one back; skipped if it would not fit */
+const RECENT_KEY = 'ltplanner.recent', RECENT_MAX = 5, RECENT_ONE = 250000, RECENT_ALL = 900000;   // small caps: the plan you are working on must always have room to autosave
+const recentList = () => { try { const l = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(l) ? l.filter(r => r && typeof r.name === 'string' && r.plan) : []; } catch { return []; } };
+/* keep a copy of a plan in Recent plans; true if it is safely kept (or there was nothing worth keeping) */
+function stashPlan(plan) {
+  try {
+    const site = plan && plan.site || {}; if (!plan || !((plan.items || []).length || site.poly || site.ground || Object.keys(plan.blocks || {}).length)) return true;   // an empty rectangle is nothing to lose; an outline, ground heights or blocks are worth keeping
+    const json = JSON.stringify(plan); if (json.length > RECENT_ONE) return false;
+    const l = recentList().filter(r => JSON.stringify(r.plan) !== json); l.unshift({ name: plan.name, at: new Date().toISOString(), n: (plan.items || []).length, plan: JSON.parse(json) });
+    while (l.length > RECENT_MAX || JSON.stringify(l).length > RECENT_ALL) l.pop();
+    if (!l.some(r => JSON.stringify(r.plan) === json)) return false;
+    localStorage.setItem(RECENT_KEY, JSON.stringify(l)); return true;
+  } catch { return false; }
+}
+function forgetRecent(i) { try { const l = recentList(); l.splice(i, 1); localStorage.setItem(RECENT_KEY, JSON.stringify(l)); } catch {} if (S.tab === 'setup') renderSetup(); }
+async function openRecent(i) { const r = recentList()[i]; if (!r) return; let p; try { p = M.cleanPlan(JSON.parse(JSON.stringify(r.plan))); } catch { toast('That plan could not be opened.'); return; }
+  if (!stashPlan(S.plan) && !(await confirmBox('Replace the plan you are working on?', 'It is too big to keep in Recent plans. Download it first if you want to keep it.', 'Replace it'))) return;
+  try { const l = recentList(), j = JSON.stringify(r.plan), k = l.findIndex(x => JSON.stringify(x.plan) === j); if (k >= 0) { l.splice(k, 1); localStorage.setItem(RECENT_KEY, JSON.stringify(l)); } } catch {}   // it is open now, so it leaves the list
+  loadPlan(p, true); toast('Opened "' + p.name + '".'); if (S.tab === 'setup') renderSetup(); }
+function loadPlan(p, noStash) { holdDoc = false; if (!noStash && S.plan && S.plan !== p) stashPlan(S.plan); if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); limitToast = false; S.plan = p; S.editOutline = false; S.drawOutline = false; S.od = null; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
 
 /* ---------- the page ---------- */
 function build(g = {}) {
@@ -118,17 +153,22 @@ function build(g = {}) {
   const slot = el('div', { class: 'pr-slot' }, [fileWrap, undoB, redoB, el('span', { class: 'sp' }), tabs, el('span', { class: 'sp' }), titleEl]);
 
   /* left: tools, crops, blocks */
-  const T = [['select', 'Select', 'up', 'V'], ['bed', 'Bed', 'rect', 'B'], ['area', 'Area', 'grid', 'A'], ['path', 'Path', 'path', 'P'], ['fence', 'Fence', 'fence', 'F'],
+  const T = [['select', 'Select', 'up', 'V'], ['bed', 'Bed', 'rect', 'B'], ['shape', 'Free-form shape', 'path', 'X'], ['area', 'Area', 'grid', 'A'], ['path', 'Path', 'path', 'P'], ['fence', 'Fence', 'fence', 'F'],
     ['plant', 'Plant', 'tag', 'L'], ['rows', 'Crop rows', 'rows', 'R'], ['ground', 'Shape ground', 'hill', 'G'], ['tank', 'Water tank', 'ellipse', 'W'], ['pipe', 'Drip line', 'drip', 'D'], ['bench', 'Seed bench', 'table', 'S'], ['building', 'Building', 'house', 'H'], ['greenhouse', 'Greenhouse', 'greenhouse', 'E'], ['pergola', 'Pergola', 'pergola', 'O'], ['trellis', 'Trellis', 'trellis', 'T'], ['wall', 'Retaining wall', 'wall', 'K'], ['note', 'Note', 'text', 'N'], ['task', 'Job', 'calendar', 'J']];
-  const toolGrid = el('div', { class: 'addgrid', role: 'group', 'aria-label': 'Tools' });
-  for (const [k, l, ic, key] of T) { const b = el('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', title: l + ' (' + key + ')', onclick: () => setTool(k) }, [icon(ic), l]); toolBtns[k] = b; toolGrid.append(b); }
+  const toolGrid = el('div', { class: 'toolsets', role: 'group', 'aria-label': 'Tools' });
+  const mkTool = ([k, l, ic, key]) => { const b = el('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', title: l + ' (' + key + ')', onclick: () => setTool(k) }, [icon(ic), l]); toolBtns[k] = b; return b; };
+  const TD = Object.fromEntries(T.map(x => [x[0], x]));
+  toolGrid.append(el('div', { class: 'addgrid toolset-select' }, [mkTool(TD.select)]));
+  for (const [title, keys] of [['Beds and planting', ['bed', 'area', 'shape', 'plant', 'rows']], ['Paths, fences and walls', ['path', 'fence', 'wall', 'trellis', 'pipe']], ['Buildings and equipment', ['building', 'greenhouse', 'pergola', 'bench', 'tank']], ['Ground', ['ground']], ['Notes and jobs', ['note', 'task']]]) {
+    const f = fold('planner-tools', title, true); f.body.append(el('div', { class: 'addgrid' }, keys.map(k => mkTool(TD[k])))); toolGrid.append(f.box);
+  }
   const cropSel = el('select', { 'aria-label': 'Crop for the Plant tool', onchange: e => { S.crop = e.target.value; } }, cropOptions());
   cropSel.value = S.crop;
   blocksEl = el('div');
   const left = el('aside', { class: 'pr-left', 'aria-label': 'Tools and blocks' }, [
     el('h3', { text: 'Draw' }), toolGrid,
     el('label', { class: 'small v3-chk pl-keep', title: 'Normally each tool places one thing, then goes back to Select. Tick this to place several in a row.' }, [keepCb = el('input', { type: 'checkbox', onchange: e => { S.keep = e.target.checked; svg.focus(); } }), ' Keep the tool on to place several']),
-    el('p', { class: 'small muted', text: 'Beds, areas, tanks and benches: drag a box. Paths, fences and drip lines: tap each corner, double-tap or Enter to finish.' }),
+    hintEl = el('p', { class: 'small muted' }),
     brushBar(),
     el('h3', { text: 'Plant tool' }), el('label', { class: 'small' }, ['Crop', cropSel]),
     el('h3', { text: 'Blocks' }), blocksEl,
@@ -148,10 +188,10 @@ function build(g = {}) {
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zoom out', onclick: () => zoomBy(1 / 1.25) }, [icon('zoomOut')]),
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zoom in', onclick: () => zoomBy(1.25) }, [icon('zoomIn')]),
     el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Fit the plan', onclick: () => { fit(); drawAll(); } }, [icon('fit')]),
-    sunB, showSel, el('span', { class: 'grow' }), icon('calendar'), dateIn, dateLbl]);
+    sunB, showSel, ctlSel = el('select', { class: 'pl-ctl', 'aria-label': 'Controls', title: 'Controls: Auto picks touch or mouse for this device. Mouse and keyboard: wheel zooms, Shift+wheel or [ ] turns. Touch: buttons beside the item.', onchange: e => setControls(e.target.value) }, [['auto', 'Controls: auto'], ['mouse', 'Mouse + keys'], ['touch', 'Touch (tablet)']].map(([v, l]) => el('option', { value: v, text: l }))), el('span', { class: 'grow' }), icon('calendar'), dateIn, dateLbl]);
   svg = sv('svg', { class: 'pl-svg', role: 'img', 'aria-label': 'The plan, seen from above', tabindex: '0' });
   world = sv('g'); overlay = sv('g'); svg.append(world, overlay);
-  const stage = el('div', { class: 'pr-stage' }, [stageBar, el('div', { class: 'pr-canvas pl-canvas' }, [svg, floatEl || el('span')])]);
+  const stage = el('div', { class: 'pr-stage' }, [stageBar, odHud = el('div', { class: 'pl-hud', role: 'group', 'aria-label': 'Drawing the site outline', hidden: true }), el('div', { class: 'pr-canvas pl-canvas' }, [svg, floatEl || el('span'), flyEl = el('div', { class: 'pl-fly', role: 'toolbar', 'aria-label': 'Selected item', hidden: true })])]);
 
   /* right: tree and properties */
   const treeBox = el('div');
@@ -170,7 +210,7 @@ function build(g = {}) {
   tree = featureTree(treeBox, {
     label: 'Feature tree', empty: 'Nothing in this plan yet. Pick a tool on the left.',
     nodes: treeNodes, isSelected: id => S.sel.has(id),
-    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group', rows: 'grid', building: 'house', greenhouse: 'greenhouse', pergola: 'pergola', trellis: 'trellis', wall: 'wall' }[n.kind] || 'rect'),
+    iconFor: n => (n.children ? 'folder' : { task: 'calendar', bed: 'rect', area: 'grid', path: 'line', fence: 'line', pipe: 'line', plant: 'tag', tank: 'ellipse', bench: 'table', note: 'text', block: 'group', rows: 'grid', building: 'house', greenhouse: 'greenhouse', pergola: 'pergola', trellis: 'trellis', wall: 'wall', shape: 'path' }[n.kind] || 'rect'),
     onSelect: (id, add) => { if (id.startsWith('f:')) return; S.pulse = { id, until: Date.now() + 3000 }; setTimeout(drawScene, 3100); select(id, add); },
     onToggle: (id, flag) => {
       const list = id.startsWith('f:') ? items().filter(it => it.folder === id.slice(2)) : [byId(id)].filter(Boolean);
@@ -191,7 +231,7 @@ function build(g = {}) {
   wireCanvas();
   wireKeys();
   new ResizeObserver(() => { if (!S.view) fit(); drawScene(); }).observe(svg.parentElement);
-  setTool('select');
+  setTool('select'); applyControls();
   fit(); drawAll();
 }
 /* find a plant or variety: every word must appear in the item's name, crop, variety or look name; matches glow on the plan, in the list and in 3D */
@@ -258,11 +298,19 @@ function drawItem(g, it, plan, faded) {
     }
     if (it.kind !== 'area' || it.w * S.view.scale > 60) grp.append(label(it.name, it.x, it.y + (it.kind === 'area' ? 0 : it.h / 2 + 0.05), it.kind === 'area'));
     if (S.show && ['bed', 'greenhouse', 'bench'].includes(it.kind) && it.w * S.view.scale > 40) { const t = contentsText(it, plan); if (t) { const l2 = label(t, it.x, it.y + it.h / 2 + 0.05 + 14 / S.view.scale, false); l2.setAttribute('class', 'pl-label pl-sub'); grp.append(l2); } }
+  } else if (k.poly) {   // free-form shape: a closed outline drawn as a bed, an area, a building or a pond
+    const d = 'M' + it.pts.map(p => p.join(' ')).join('L') + 'Z', st = it.style || 'bed';
+    const fill = st === 'bed' ? COL.bedFill : st === 'area' ? (areaFill(it) || '#C9DDB8') : st === 'building' ? (it.roofColour || '#8a5a44') : '#9CC7E6';
+    const stroke = st === 'bed' ? COL.bed : st === 'building' ? '#5a4a3a' : st === 'pond' ? '#3d7fb0' : '#7a9a68';
+    grp.append(sv('path', { d, fill, 'fill-opacity': st === 'pond' ? 0.8 : 1, stroke, 'stroke-width': st === 'bed' ? 2 : 1.4, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke', class: 'hit' }));
+    const bb = M.bounds(it, S.plan);
+    if ((bb[2] - bb[0]) * S.view.scale > 50) grp.append(label(it.name, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, true));
   } else if (k.line) {
     const d = 'M' + it.pts.map(p => p.join(' ')).join('L');
     if (it.kind === 'path') grp.append(sv('path', { d, fill: 'none', stroke: COL.path, 'stroke-width': it.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
     if (it.kind === 'fence') { const st = it.style || 'palings', c = it.colour || { palings: COL.fence, pickets: '#9a8f7a', slats: '#6b5238', wire: '#7a6a55', panels: '#8a998c' }[st]; grp.append(sv('path', { d, fill: 'none', stroke: c, 'stroke-width': st === 'wire' ? 1.5 : 3, 'stroke-dasharray': st === 'wire' ? '6 4' : st === 'pickets' ? '2 2' : null, 'vector-effect': 'non-scaling-stroke' })); it.pts.forEach(p => grp.append(sv('rect', { x: p[0] - 0.06, y: p[1] - 0.06, width: 0.12, height: 0.12, fill: c }))); }
     if (it.kind === 'trellis') { grp.append(sv('path', { d, fill: 'none', stroke: '#6E8B4A', 'stroke-width': 2, 'stroke-dasharray': it.style === 'wire' ? '2 3' : null, 'vector-effect': 'non-scaling-stroke' })); it.pts.forEach(p => grp.append(sv('circle', { cx: p[0], cy: p[1], r: 0.05, fill: '#6b4f33' }))); }
+    if (it.kind === 'wall' && it.retain) { const sg = it.retain.high === 'left' ? 1 : -1, tl = 8 / S.view.scale, gap = 10 / S.view.scale, th = (EW.WALL_THICK[it.material] || 0.2) / 2; let dd = ''; const vr = curView, pad = tl + th + 1; for (let i = 1; i < it.pts.length; i++) { const a = it.pts[i - 1], b = it.pts[i], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 1e-6) continue; if (vr && (Math.max(a[0], b[0]) + pad < vr[0] || Math.min(a[0], b[0]) - pad > vr[2] || Math.max(a[1], b[1]) + pad < vr[1] || Math.min(a[1], b[1]) - pad > vr[3])) continue; const nx = sg * dy / L, ny = -sg * dx / L, k = Math.min(300, Math.floor(L / gap)); for (let j = 0; j <= k; j++) { if (tickBudget-- <= 0) break; const t = (j + 0.5) / (k + 1), x = a[0] + dx * t, y = a[1] + dy * t; dd += 'M' + (x - nx * th).toFixed(3) + ' ' + (y - ny * th).toFixed(3) + 'L' + (x - nx * (th + tl)).toFixed(3) + ' ' + (y - ny * (th + tl)).toFixed(3); } } if (dd) grp.append(sv('path', { d: dd, fill: 'none', stroke: '#5a4a3a', 'stroke-width': 1.3, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }   // ticks on the LOW side, the way maps mark a retaining wall
     if (it.kind === 'wall') { const c = WALL_2D[it.material] || WALL_2D.sleeper; grp.append(sv('path', { d, fill: 'none', stroke: c, 'stroke-width': 0.2 + it.height * 0.1, 'stroke-linejoin': 'miter' })); grp.append(sv('path', { d, fill: 'none', stroke: shade(c, -0.4), 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' })); }
     if (it.kind === 'pipe') grp.append(sv('path', { d, fill: 'none', stroke: COL.pipe, 'stroke-width': 2, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
     grp.append(sv('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(0.4, it.width || 0), class: 'hit' }));
@@ -307,12 +355,22 @@ function label(text, x, y, centre, note) {
   t.textContent = String(text).slice(0, 60); return t;
 }
 /* drawAll: the plan and every panel.  drawScene: only the plan (while dragging, panning and zooming, so the tree keeps focus). */
-function drawAll() { if (!S.view || !svg) return; if (S.tab === 'setup') { clearTimeout(setupT); setupT = setTimeout(renderSetup, 0); } drawScene(); tree.render(); drawProps(); drawBlocks(); drawCal(); drawPlaces(); }
+function drawAll() {
+  outCache = null; if (!S.view || !svg) return; if (S.tab === 'setup') { clearTimeout(setupT); setupT = setTimeout(renderSetup, 0); } drawScene(); tree.render(); drawProps(); drawBlocks(); drawCal(); drawPlaces(); }
 /* contour lines from the plan's ground heights (worked out once per height set and interval, then reused) */
-let contourCache = { gd: null, step: 0, lines: [] };
+let contourCache = { gd: null, step: 0, lines: [] }, getDrag = () => null;
+let tickBudget = 0, limitToast = false, curView = null;
+/* the part of the plan on screen, in plan metres (null when the view is not ready): lets heavy drawing skip what cannot be seen */
+function viewRect() { try { const v = S.view, w = svg.clientWidth || 1200, h = svg.clientHeight || 800; return [-v.x / v.scale, -v.y / v.scale, (w - v.x) / v.scale, (h - v.y) / v.scale]; } catch { return null; } }
 function drawContours() {
   const gd = S.plan.site.ground;
-  if (!(contourCache.live || (contourCache.gd === gd && contourCache.step === S.contourStep))) { const g = groundGrid(); contourCache = { gd, step: S.contourStep, lines: g ? TR.contours(g, S.contourStep) : [] }; }
+  const dg = getDrag();
+  if (dg && (dg.move || dg.handle) && contourCache.lines && contourCache.gd === gd && contourCache.fin !== undefined) return drawContourLines();   // while a wall or item is being dragged keep the last contours; they are redone when it is dropped
+  const fin = EW.finished(S.plan), useFin = fin.count > 0 ? fin : null;   // with soil-holding walls the contours show the finished ground
+  if (!(contourCache.live || (contourCache.gd === gd && contourCache.step === S.contourStep && contourCache.fin === useFin))) { const g = useFin ? useFin.grid : groundGrid(); if (useFin && useFin.limited && !limitToast) { limitToast = true; toast('This plan has very many long soil-holding walls. The ground shown is only partly worked out; simplify or remove some walls to see it all.', 8000); } contourCache = { gd, step: S.contourStep, fin: useFin, lines: g ? TR.contours(g, S.contourStep, useFin ? { skip: useFin.crossed } : {}) : [] }; }
+  drawContourLines();
+}
+function drawContourLines() {
   for (const c of contourCache.lines) {
     const major = Math.abs(c.level / (S.contourStep * 5) - Math.round(c.level / (S.contourStep * 5))) < 1e-6;
     const d = c.lines.map(l => 'M' + l.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L')).join('');
@@ -320,18 +378,122 @@ function drawContours() {
     if (major && c.lines.length) { const l = c.lines.reduce((b, x) => (x.length > b.length ? x : b), c.lines[0]), p = l[Math.floor(l.length / 2)]; const t = sv('text', { x: p[0], y: p[1], 'font-size': 11 / S.view.scale, fill: '#6b5226', 'pointer-events': 'none' }); t.textContent = c.level.toFixed(1) + ' m'; world.append(t); }
   }
 }
+/* ---------- drawing the site outline like a CAD polyline: click corners, or type a length (and an angle) and press Enter ---------- */
+const clampSite = q => [Math.min(S.plan.site.w, Math.max(0, q[0])), Math.min(S.plan.site.h, Math.max(0, q[1]))];
+function odPoint(p, shift) {
+  const last = S.od.pts[S.od.pts.length - 1];
+  if (last && shift) { const dx = p[0] - last[0], dy = p[1] - last[1], L = Math.hypot(dx, dy), a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4; return clampSite([r2(last[0] + Math.cos(a) * L), r2(last[1] + Math.sin(a) * L)]); }   // Shift: straight along 0, 45 or 90 degrees
+  return clampSite([snap(p[0]), snap(p[1])]);
+}
+const odAngle = (a, b) => { let d = Math.atan2(-(b[1] - a[1]), b[0] - a[0]) * 180 / Math.PI; if (d < 0) d += 360; return Math.round(d * 10) / 10; };   // degrees anticlockwise from east, as on a CAD screen
+function odFill(g) {
+  g.textContent = ''; const od = S.od; if (!od || !S.view) return; const r = 1 / S.view.scale, pts = od.pts, tg = odTarget(), all = tg ? pts.concat([tg.q]) : pts;
+  if (all.length > 1) g.append(sv('path', { d: 'M' + all.map(p => p[0] + ' ' + p[1]).join('L'), class: 'pl-draft', fill: 'none', 'vector-effect': 'non-scaling-stroke' }));
+  pts.forEach((p, i) => g.append(sv('circle', { cx: p[0], cy: p[1], r: (i === 0 && pts.length >= 3 ? 9 : 4) * r, class: i === 0 ? 'pl-ocorner' : 'pl-overt' })));
+  lenLabels(g, all, false);
+}
+function lenLabels(g, ring, closed, pick) {   // the length of each side, where it is long enough to read
+  const n = closed ? ring.length : ring.length - 1;
+  for (let i = 0; i < n; i++) { const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L * S.view.scale < 46) continue;
+    const off = pick ? 16 / S.view.scale / L * (((b[0] - a[0]) >= 0) ? 1 : -1) : 0, t = sv('text', { x: (a[0] + b[0]) / 2 - (b[1] - a[1]) * off, y: (a[1] + b[1]) / 2 + (b[0] - a[0]) * off, 'font-size': 11 / S.view.scale, class: 'pl-elen' + (pick ? ' pl-elen-click' : ''), 'text-anchor': 'middle', 'pointer-events': pick ? 'all' : 'none' }); t.textContent = (Math.round(L * 100) / 100) + ' m'; if (pick) { t.setAttribute('role', 'button'); t.addEventListener('pointerdown', e => e.stopPropagation()); t.addEventListener('click', e => { e.stopPropagation(); pick(i, L); }); } g.append(t); }
+}
+/* the point the next corner would go to: where the pointer is, unless a length and/or an angle has been typed (AutoCAD calls this dynamic input) */
+function odTarget() {
+  const od = S.od, pts = od.pts, last = pts[pts.length - 1]; if (!last) return null;
+  const h = od.hover || [last[0] + 1, last[1]];
+  if (!od.lock.len && !od.lock.ang) return { q: h, L: Math.hypot(h[0] - last[0], h[1] - last[1]), a: odAngle(last, h) };
+  let L = od.lock.len ? od.len : Math.hypot(h[0] - last[0], h[1] - last[1]), a = odAngle(last, h);
+  if (od.lock.ang) a = od.mode === 'turn' && pts.length >= 2 ? odAngle(pts[pts.length - 2], last) + od.ang : od.ang;
+  const rad = a * Math.PI / 180; return { q: [r2(last[0] + Math.cos(rad) * L), r2(last[1] - Math.sin(rad) * L)], L, a };
+}
+const norm180 = a => { a = ((a % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+function odFields() {   // refresh the Length and Angle boxes from the pointer, unless the person is typing in them
+  const od = S.od, u = S.odUI; if (!od || !u) return; const t = odTarget();
+  const turn = od.mode === 'turn' && od.pts.length >= 2, prev = turn ? odAngle(od.pts[od.pts.length - 2], od.pts[od.pts.length - 1]) : 0;
+  if (t && !od.lock.len && document.activeElement !== u.len) u.len.value = String(Math.round(t.L * 100) / 100);
+  if (t && !od.lock.ang && document.activeElement !== u.ang) u.ang.value = String(Math.round((turn ? norm180(t.a - prev) : t.a) * 10) / 10);
+  u.len.classList.toggle('locked', od.lock.len); u.ang.classList.toggle('locked', od.lock.ang);
+  u.msg.textContent = !od.pts.length ? (od.kind === 'shape' ? 'Click the first corner of the shape.' : 'Click the first corner of the site.') : od.pts.length < 3 ? 'Click the next corner, or type its Length and Angle.' : 'Click the next corner, or click the first corner to close the shape.';
+}
+function odHudDraw() {
+  if (!odHud) return; const od = S.od; odHud.hidden = !od; if (!od) { S.odUI = null; odHud.textContent = ''; return; }
+  if (S.odUI && odHud.dataset.n === String(od.pts.length)) { odFields(); return; }
+  odHud.dataset.n = String(od.pts.length); const had = S.odUI && odHud.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null; odHud.textContent = '';
+  const mkIn = (label, key, step) => { const i = el('input', { type: 'number', step, 'aria-label': label, class: 'pl-hud-in', inputmode: 'decimal', disabled: !od.pts.length }); i.addEventListener('input', () => { const v = i.value.trim(); od.lock[key] = v !== '' && Number.isFinite(+v) && (key !== 'len' || +v > 0); od[key] = +v; drawScene(); }); i.addEventListener('keydown', odInKey); return i; };
+  const len = mkIn('Length (m)', 'len', '0.1'), ang = mkIn('Angle (degrees)', 'ang', '1');
+  const mode = el('select', { 'aria-label': 'What the angle means', class: 'pl-hud-mode', disabled: od.pts.length < 2, onchange: e => { od.mode = e.target.value; od.lock.ang = false; ang.value = ''; od.ang = 0; drawScene(); } }, [['dir', 'Angle: 0° is right, 90° is up'], ['turn', 'Angle: turn from the last side (+ is left)']].map(([v, l]) => el('option', { value: v, text: l, selected: od.mode === v })));
+  const msg = el('span', { class: 'pl-hud-msg' });
+  S.odUI = { len, ang, msg };
+  odHud.append(msg, el('div', { class: 'pl-hud-row' }, [el('label', { class: 'small' }, ['Length (m)', len]), el('label', { class: 'small' }, ['Angle (°)', ang]), mode]),
+    el('div', { class: 'pl-hud-row' }, [el('button', { type: 'button', class: 'btn sm', text: 'Undo corner', disabled: !od.pts.length, onclick: () => { od.pts.pop(); odLockClear(); drawScene(); } }), el('button', { type: 'button', class: 'btn sm primary', text: 'Close the shape', disabled: od.pts.length < 3, onclick: odClose }), el('button', { type: 'button', class: 'btn sm', text: 'Cancel', onclick: endOutline }), el('span', { class: 'small muted', text: 'Type a number to set the Length, Tab for the Angle, Enter to add the corner.' })]));
+  if (had) { const b = odHud.querySelector('[aria-label="' + had + '"]'); if (b && !b.disabled) b.focus(); }
+  odFields();
+}
+const odLockClear = () => { const od = S.od; if (od) { od.lock = { len: false, ang: false }; od.len = 0; od.ang = 0; } };
+function odCommit() {   // Enter in a box: put the corner where the typed length and angle say
+  const od = S.od, t = od && odTarget(); if (!t) return;
+  if (t.q[0] < -0.001 || t.q[1] < -0.001 || t.q[0] > S.plan.site.w + 0.001 || t.q[1] > S.plan.site.h + 0.001) { toast('That corner is outside the drawing area. Make the width and depth bigger first, or use a shorter length.', 5000); return; }
+  odAdd(t.q); if (svg) svg.focus();
+}
+function odInKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); odCommit(); }
+  else if (e.key === 'Escape') { e.preventDefault(); endOutline(); if (svg) svg.focus(); }
+}
+function startOutline(kind) {
+  S.drawOutline = true; S.editOutline = false; S.od = { pts: [], hover: null, lock: { len: false, ang: false }, len: 0, ang: 0, mode: 'dir', kind: kind === 'shape' ? 'shape' : 'site' }; S.sel.clear(); S.draft = null; setTool('select');
+  if (S.tab === 'setup' && kind !== 'shape') showTab('plan'); drawAll(); toast(kind === 'shape' ? 'Draw the shape: click each corner, then click the first corner or press Enter to close it.' : 'Draw the site outline: click each corner.', 3500);
+}
+function endOutline() { S.drawOutline = false; S.od = null; drawAll(); }
+function odAdd(q) {
+  const od = S.od, pts = od.pts, last = pts[pts.length - 1];
+  if (last && Math.hypot(q[0] - last[0], q[1] - last[1]) < 0.05) return;
+  if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < 12 / S.view.scale) { odClose(); return; }
+  if (pts.length >= 2 && O.segCrosses(pts, last, q)) { toast('That side would cross another one.'); return; }
+  if (pts.length >= O.MAX_POLY_PTS) { toast('That is the most corners an outline can have.'); return; }
+  pts.push(q); odLockClear(); od.hover = null; drawScene();
+}
+function odClose() {
+  const od = S.od; if (!od || od.pts.length < 3) { toast('Add at least three corners.'); return; }
+  if (od.kind === 'shape') {
+    const pts = od.pts.map(p => p.slice());
+    if (O.selfIntersects(pts) || Math.abs(O.area(pts)) < 0.01) { toast('That shape crosses itself or is too small. Undo a corner and try again.'); return; }
+    S.od = null; S.drawOutline = false; add({ kind: 'shape', name: 'Shape', style: 'bed', pts }); toast('Shape added. Pick its type (bed, area, building or pond) in the panel.', 3500); return;
+  }
+  const keepPts = od.pts.map(p => p.slice()); S.od = null; S.drawOutline = false;
+  if (!setPoly(keepPts)) { S.od = { pts: keepPts, hover: null, lock: { len: false, ang: false }, len: 0, ang: 0, mode: 'dir' }; S.drawOutline = true; drawAll(); return; }   // too small or crossing: stay in drawing so a corner can be taken back
+  toast('Site outline set. Move corners to fine-tune it.', 3500);
+}
+function odType(e) {   // keys while drawing and no box is focused; returns true if the key was used
+  const od = S.od; if (!od) return false;
+  if (e.key === 'Escape') { endOutline(); return true; }
+  if (e.key === 'Enter') { if (od.lock.len || od.lock.ang) odCommit(); else if (od.pts.length >= 3) odClose(); return true; }
+  if (e.key === 'Backspace') { od.pts.pop(); odLockClear(); drawScene(); return true; }
+  if (/^[0-9.]$/.test(e.key) && od.pts.length && S.odUI) { const u = S.odUI.len; u.focus(); u.value = e.key; od.lock.len = e.key !== '.'; od.len = +e.key || 0; drawScene(); u.setSelectionRange && 0; return true; }   // the first digit goes into Length
+  return false;
+}
+function ghostAttrs() {   // the faint preview of what the placing tool will make
+  const g = S.ghost, d = BOX_DEF[S.tool]; if (!g) return null;
+  if (d) { const x1 = Math.min(g[0] + d[0], region().bb[2]), y1 = Math.min(g[1] + d[1], region().bb[3]); return { tag: 'rect', at: { x: Math.max(0, x1 - d[0]), y: Math.max(0, y1 - d[1]), width: d[0], height: d[1] } }; }
+  if (S.tool === 'plant') return { tag: 'circle', at: { cx: g[0], cy: g[1], r: (M.CROPS[S.crop][2] || 0.5) / 2 } };
+  return null;
+}
 function drawScene() {
   if (!S.view || !svg) return;
+  curView = viewRect(); tickBudget = 20000;   // wall ticks drawn per redraw: a hostile plan cannot build megabytes of path text
   flatCache = { items: null, key: '', all: [] };   // the bed text is worked out fresh for every drawing
   const v = S.view, { w, h } = S.plan.site;
   world.setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.scale})`);
   world.textContent = ''; overlay.textContent = ''; ring = null;
   // ground and grid (major line every 5 m, or 1 m when zoomed in)
-  world.append(sv('rect', { x: 0, y: 0, width: w, height: h, class: 'pl-ground' }));
+  const reg = region(), first0 = world.children.length;
+  if (reg.rect) world.append(sv('rect', { x: 0, y: 0, width: w, height: h, class: 'pl-ground' }));
+  else { const dd = 'M' + reg.outer.map(p => p[0].toFixed(3) + ' ' + p[1].toFixed(3)).join('L') + 'Z'; const cp = sv('clipPath', { id: 'pl-site-clip' }); cp.append(sv('path', { d: dd })); world.append(cp, sv('path', { d: dd, class: 'pl-ground' })); }
+  const first = world.children.length;
   const step = v.scale > 40 ? 1 : v.scale > 8 ? 5 : 10, gp = sv('path', { class: 'pl-grid', 'vector-effect': 'non-scaling-stroke' }); let d = '';
   for (let x = step; x < w; x += step) d += `M${x} 0V${h}`; for (let y = step; y < h; y += step) d += `M0 ${y}H${w}`;
   gp.setAttribute('d', d); world.append(gp);
-  if (S.contours && S.plan.site.ground) drawContours();
+  if (S.contours && (S.plan.site.ground || EW.retainWalls(S.plan).length)) drawContours();
+  if (!reg.rect) { const g = sv('g', { 'clip-path': 'url(#pl-site-clip)' }); [...world.children].slice(first).forEach(c => g.append(c)); world.append(g); }
   const editing = S.ctx ? S.plan.blocks[S.ctx] : null;
   if (editing) { S.plan.items.forEach(it => drawItem(world, it, S.plan, true)); world.append(sv('rect', { x: -1000, y: -1000, width: 3000, height: 3000, fill: 'var(--desk)', opacity: 0.55 })); }
   items().forEach(it => drawItem(world, it, S.plan, false));
@@ -350,8 +512,20 @@ function drawScene() {
     if (dr.box) world.append(sv('rect', { x: Math.min(dr.a[0], dr.b[0]), y: Math.min(dr.a[1], dr.b[1]), width: Math.abs(dr.b[0] - dr.a[0]), height: Math.abs(dr.b[1] - dr.a[1]), class: 'pl-draft', 'vector-effect': 'non-scaling-stroke' }));
     if (dr.pts) world.append(sv('path', { d: 'M' + dr.pts.concat(dr.hover ? [dr.hover] : []).map(p => p.join(' ')).join('L'), class: 'pl-draft', fill: 'none', 'vector-effect': 'non-scaling-stroke' }));
   }
+  if (S.editOutline && S.plan.site.poly && !S.ctx && S.tab !== 'setup') { const P = S.plan.site.poly, r = 1 / v.scale;
+    P.forEach((p, i) => { const q = P[(i + 1) % P.length]; world.append(sv('circle', { cx: (p[0] + q[0]) / 2, cy: (p[1] + q[1]) / 2, r: 9 * r, class: 'pl-omid', 'data-omid': i })); });
+    P.forEach((p, i) => world.append(sv('circle', { cx: p[0], cy: p[1], r: 13 * r, class: 'pl-ocorner', 'data-ocorner': i }))); }
+  { const out = outsideIds(); if (out.length) { const set = new Set(out); for (const it of items()) if (set.has(it.id)) { const b = M.bounds(it, S.plan); if (b) world.append(sv('rect', { x: b[0] - 0.1, y: b[1] - 0.1, width: b[2] - b[0] + 0.2, height: b[3] - b[1] + 0.2, class: 'pl-outside', 'vector-effect': 'non-scaling-stroke' })); } } }
+  S.odG = null;
+  if (S.drawOutline && S.od) { S.odG = sv('g', { 'pointer-events': 'none' }); world.append(S.odG); odFill(S.odG); }
+  if (S.editOutline && S.plan.site.poly && !S.ctx && S.tab !== 'setup') { const lg = sv('g'); lenLabels(lg, S.plan.site.poly, true, (i, L) => askSide(L, v => setPoly(setSide(S.plan.site.poly, i, v)))); world.append(lg); world.querySelectorAll('.pl-omid,.pl-ocorner').forEach(n => world.append(n)); }   /* handles stay on top of the labels */
+  if (!S.drawOutline && S.tool === 'select' && S.sel.size === 1) { const it = byId([...S.sel][0]); if (it && it.kind === 'shape' && !it.locked) { const lg = sv('g'); lenLabels(lg, it.pts, true, (i, L) => askSide(L, v => shapeSides(it, setSide(it.pts, i, v)))); world.append(lg); } }
+  odHudDraw();
+  S.ghostEl = null;
+  if (S.ghost && S.tool !== 'select' && !S.draft) { const a = ghostAttrs(); if (a) { S.ghostEl = sv(a.tag, Object.assign({ class: 'pl-ghost', 'vector-effect': 'non-scaling-stroke' }, a.at)); world.append(S.ghostEl); } }
   drawCompass();
   dateIn.value = String(dayOf(S.plan.date)); dateLbl.textContent = new Date(S.plan.date + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  drawFlyout();
   titleEl.textContent = S.plan.name + (editing ? ' · editing block "' + editing.name + '"' : '');
   syncHash();
 }
@@ -426,7 +600,8 @@ const TOOL_HINT = { bed: 'Bed: drag a box on the plan.', area: 'Area: drag a box
   path: 'Path: tap each corner, then tap the last one again to finish.', fence: 'Fence: tap each corner, then tap the last one again to finish.', pipe: 'Drip line: tap each corner, then tap the last one again to finish.',
   plant: 'Plant: tap where it goes.', note: 'Note: tap where it goes.', task: 'Job: tap where it is.', ground: 'Shape ground: drag on the plan. Two fingers move and zoom.', select: 'Select: tap an item; drag empty space to move around.' };
 function setTool(t) {
-  S.tool = t; S.draft = null; if (t === 'select') { S.keep = false; if (keepCb) keepCb.checked = false; }
+  if (t === 'shape') { startOutline('shape'); return; }
+  S.tool = t; S.draft = null; S.ghost = null; if (t === 'select') { S.keep = false; if (keepCb) keepCb.checked = false; }
   Object.entries(toolBtns).forEach(([k, b]) => b.setAttribute('aria-pressed', String(k === t)));
   svg.style.cursor = t === 'select' ? 'default' : 'crosshair';
   if (brushEl) brushEl.hidden = t !== 'ground';
@@ -434,6 +609,45 @@ function setTool(t) {
   if (smallScreen() && document.body.classList.contains('show-left')) { document.body.classList.remove('show-left'); const h = TOOL_HINT[t]; if (h) toast(h, 3500); }
   if (t === 'ground') { S.contours = true; if (!S.plan.site.ground && S.contourStep > 0.25) S.contourStep = 0.25; }
   drawAll();
+}
+/* ---------- controls: mouse and keyboard, or touch (a tablet has no wheel or right button) ---------- */
+const ctlPref = () => { try { const v = localStorage.getItem('ltplanner.controls'); return ['mouse', 'touch'].includes(v) ? v : 'auto'; } catch { return 'auto'; } };
+const ctlMode = () => { const p = ctlPref(); if (p !== 'auto') return p; try { return window.matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse'; } catch { return 'mouse'; } };
+function setControls(v) { try { localStorage.setItem('ltplanner.controls', v); } catch {} applyControls(); }
+function applyControls() {
+  const m = ctlMode(); document.body.classList.toggle('ctl-touch', m === 'touch'); if (ctlSel) ctlSel.value = ctlPref();
+  if (hintEl) hintEl.textContent = m === 'touch' ? 'Tap a tool, then drag a box or tap the plan. Two fingers move and zoom the plan. Tap an item to turn, copy or delete it.' : 'Pick a tool, then drag a box or click the plan. Wheel zooms, Shift+wheel or [ ] turns the selected item, right-click finishes a path, Esc lets go of the tool.';
+  if (S.tab === 'setup') renderSetup();
+}
+const PIP = ([x, y], q) => { let c = false; for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > y) !== (q[j][1] > y) && x < (q[j][0] - q[i][0]) * (y - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c; return c; };
+const rotatable = it => it && !it.locked && (typeof it.rot === 'number' || it.kind === 'shape' || (M.KINDS[it.kind] && M.KINDS[it.kind].box) || it.kind === 'block');
+function rotateSel(deg) {
+  const list = [...S.sel].map(byId).filter(rotatable); if (!list.length) return false;
+  for (const it of list) {
+    if (it.pts) { const b = M.bounds(it, S.plan), cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2; it.pts = it.pts.map(q => M.rotPt(q, deg, cx, cy).map(v => Math.round(v * 1000) / 1000)); continue; }
+    it.rot = (((Number(it.rot) || 0) + deg) % 360 + 360) % 360;
+  }
+  commit('rot'); return true;
+}
+/* the little bar beside the selected item: turn, copy, delete, and Keep for something just placed */
+function drawFlyout() {
+  if (!flyEl) return; const hadFocus = flyEl.contains(document.activeElement) && document.activeElement.title; flyEl.textContent = ''; flyEl.hidden = true;
+  if (S.pending && !S.sel.has(S.pending)) S.pending = null;
+  if (S.tab === 'setup' || S.sel.size !== 1 || S.tool !== 'select' || sculptDrag) return;
+  const it = byId([...S.sel][0]); if (!it || it.locked || !S.view) return;
+  const b = M.bounds(it, S.plan), v = S.view, W = svg.clientWidth, H = svg.clientHeight;
+  const cx = v.x + (b[0] + b[2]) / 2 * v.scale, top = v.y + b[1] * v.scale, bot = v.y + b[3] * v.scale;
+  const mk = (label, title, fn, cls = '') => el('button', { type: 'button', class: 'icon-btn fly-btn ' + cls, title, 'aria-label': title, text: label, onclick: e => { e.stopPropagation(); fn(); } });
+  const kids = [];
+  if (S.pending === it.id) kids.push(mk('✓', 'Keep it here', () => { S.pending = null; drawAll(); }, 'fly-ok'));
+  if (rotatable(it)) kids.push(mk('⟲', 'Turn left 15°', () => rotateSel(-15)), mk('⟳', 'Turn right 15°', () => rotateSel(15)));
+  kids.push(mk('⧉', 'Copy (Ctrl+D)', duplicate), mk('🗑', 'Delete', removeSel));
+  if (S.pending === it.id) kids.push(mk('✕', 'Take it away', () => { S.pending = null; removeSel(); }, 'fly-no'));
+  flyEl.append(...kids); flyEl.hidden = false;
+  if (hadFocus) { const b = [...flyEl.querySelectorAll('button')].find(x => x.title === hadFocus); if (b) b.focus(); }
+  const fw = flyEl.offsetWidth || 44 * kids.length, fh = flyEl.offsetHeight || 40;
+  let x = Math.min(Math.max(cx - fw / 2, 6), Math.max(6, W - fw - 6)), y = top - fh - 10; if (y < 6) y = Math.min(bot + 10, H - fh - 6);
+  flyEl.style.left = x + 'px'; flyEl.style.top = Math.max(6, y) + 'px';
 }
 /* ---------- the three screens: Setup, 2D plan, 3D view ---------- */
 function showTab(t) {
@@ -454,6 +668,9 @@ function renderSetup() {
     el('p', { class: 'small muted', text: 'Start here: choose or make a plan, then set the size of the site, where it is and the ground. When you are ready, go to the 2D plan to draw, then the 3D view to walk around it.' }),
     card('Your plan', S.plan.name + ' (' + items_ + (items_ === 1 ? ' thing' : ' things') + '). It is saved on this device as you work.', [btnRow([['Continue to the 2D plan', () => showTab('plan'), true], ['New plan…', newDialog], ['Open a plan file…', openFile]])]),
     card('The site and its rules', 'Overall size, which way north points, where you are (for the planting guide and the sun) and the ground heights. Map and height-data imports are under Ground heights. Non-rectangular sites come later.', [rules]),
+    (() => { const l = recentList(); return l.length ? card('Recent plans', 'Plans you worked on before this one, kept on this device. Opening one keeps the current plan here too.', l.map((r, i) => el('div', { class: 'pl-recent' }, [el('span', { class: 'pl-recent-n', text: r.name + ' · ' + r.n + (r.n === 1 ? ' thing' : ' things') + ' · ' + String(r.at).slice(0, 10) }), el('button', { type: 'button', class: 'btn sm', text: 'Open', onclick: () => openRecent(i) }), el('button', { type: 'button', class: 'btn sm', 'aria-label': 'Forget ' + r.name, text: 'Forget', onclick: () => forgetRecent(i) })]))) : null; })(),
+    (() => { let raw = null; try { raw = localStorage.getItem('ltplanner.lastgood'); } catch {} return raw ? card('A plan that would not open', 'This device kept a plan the planner could not open (it may come from a newer version). Reload to update, or save it as a file now.', [btnRow([['Save it as a file', () => downloadText('plan-that-would-not-open.ltplan', raw)], ['Forget it', () => { try { localStorage.removeItem('ltplanner.lastgood'); } catch {} renderSetup(); }]])]) : null; })(),
+    card('Controls', 'Auto picks touch or mouse for this device. You can switch any time (also in the bar above the plan).', [(() => { const sl = el('select', { 'aria-label': 'Controls', onchange: e => setControls(e.target.value) }, [['auto', 'Auto (this device)'], ['mouse', 'Mouse and keyboard'], ['touch', 'Touch (tablet)']].map(([v, l]) => el('option', { value: v, text: l }))); sl.value = ctlPref(); return el('label', { class: 'small pl-field' }, ['Controls', sl]); })(), el('p', { class: 'small muted', text: ctlMode() === 'touch' ? 'Touch: one finger draws and moves, two fingers move and zoom, the little bar beside an item turns, copies or deletes it.' : 'Mouse and keyboard: left button draws and moves, right button finishes a path, wheel zooms, Shift+wheel or [ ] turns the selected item, Space or middle button pans, Esc lets go of the tool.' })]),
     card('Your plants', 'Make your own plant looks (colours, shapes, crosses) and use them in the plan. Or scan a garden drawing and let the AI lay out the areas.', [btnRow([['My plants…', () => openMyPlants()], ['Scan a drawing (AI)…', scanDrawing]])]),
     card('Keep and share', 'Plan files stay on your device unless you share them.', [btnRow([['Download the plan', () => downloadText(fileName(), JSON.stringify({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }))], ['Plan for the app', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))]])]),
   ]));
@@ -465,6 +682,7 @@ function hitTest(p) {
     const it = L[i]; if (it.hidden || it.off) continue;
     const k = M.KINDS[it.kind];
     if (k.box) { const [x, y] = M.rotPt([p[0] - it.x, p[1] - it.y], -it.rot); if (Math.abs(x) <= it.w / 2 && Math.abs(y) <= it.h / 2) return it; }
+    else if (k.poly) { if (PIP(p, it.pts) || it.pts.some((q, j) => segDist(p, it.pts[(j + it.pts.length - 1) % it.pts.length], q) <= 8 / S.view.scale)) return it; }
     else if (k.line) { const tol = Math.max((it.width || 0) / 2, 8 / S.view.scale); for (let j = 1; j < it.pts.length; j++) if (segDist(p, it.pts[j - 1], it.pts[j]) <= tol) return it; }
     else { const b = M.bounds(it, S.plan); if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) return it; }
   }
@@ -478,17 +696,68 @@ function placeTap(p) {
     if (S.tool === 'task') { promptBox('Job', 'What needs doing here? (it goes on the calendar for ' + shortDay(S.plan.date) + '; change the date and repeat in the details)', '', { max: 200 }).then(t => { if (t) add({ kind: 'task', name: t.slice(0, 60), x: r2(p[0]), y: r2(p[1]), text: t, date: S.plan.date, every: '', remind: 1 }); }); return; }
     if (S.tool === 'note') { promptBox('Note', 'What should it say?', '', { max: 300 }).then(t => { if (t) add({ kind: 'note', name: 'Note', x: r2(p[0]), y: r2(p[1]), text: t }); }); }
 }
-const inSite = pt => [Math.min(S.plan.site.w, Math.max(0, pt[0])), Math.min(S.plan.site.h, Math.max(0, pt[1]))];
+const region = () => (S.ctx && S.plan.site.poly ? O.regionOf({ w: S.plan.site.w, h: S.plan.site.h }) : O.regionOf(S.plan.site));   // editing a block: its items use their own coordinates, so only the rectangle applies
+const inSite = pt => O.clampPoint(region(), pt);   // a rectangle site gives exactly the old min/max
+/* corners (or points) that stand for an item when it must stay inside an outline */
+function itemPts(it) {
+  if (it.pts) return it.pts.map(p => [p[0], p[1]]);
+  if (it.kind === 'plant' || it.kind === 'task' || it.kind === 'note') return [[it.x, it.y]];
+  if (M.KINDS[it.kind] && M.KINDS[it.kind].box) return O.boxCorners(it);
+  const b = M.bounds(it, S.plan); return b ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : [[it.x, it.y]];
+}
+const piecesOf = list => list.filter(Boolean).flatMap(it => it.pts ? it.pts.map(p => [[p[0], p[1]]]) : [itemPts(it)]);   // a box is one convex piece; plants and each corner of a path stand alone
+const itemInside = (reg, it) => it.pts ? it.pts.every(p => O.inside(reg, p[0], p[1])) : (it.kind === 'plant' || it.kind === 'task' || it.kind === 'note') ? O.inside(reg, it.x, it.y) : O.containsConvex(reg, itemPts(it));
+let outCache = null;
+const outsideIds = (fresh) => { if (!fresh && outCache) return outCache; return (outCache = outsideNow()); };
+const outsideNow = () => { const reg = region(); if (reg.rect) return []; const all = items(); if (all.length > 3000) return []; return all.filter(it => it.kind !== 'block' ? !itemInside(reg, it) : !O.containsConvex(reg, itemPts(it))).map(it => it.id); };
+function setPoly(pts, quiet) {   // one place that changes the outline, so it is always checked
+  const s = S.plan.site;
+  if (!pts) { delete s.poly; commit(); return true; }
+  const c = O.cleanPoly(pts, s.w, s.h);
+  if (!c) { if (!quiet) toast('That outline crosses itself or is too small. Move a corner back.'); drawAll(); return false; }
+  s.poly = c; commit(); return true;
+}
+function moveOutsideIn() {
+  const reg = region(); let moved = 0, stuck = 0, locked = 0;
+  for (const it of items()) { if (it.id == null) continue; if (it.kind !== 'block' ? itemInside(reg, it) : O.containsConvex(reg, itemPts(it))) continue; if (it.locked) { locked++; continue; } const d = O.nudgeInside(reg, piecesOf([it])); if (d) { M.moveItem(it, d[0], d[1]); moved++; } else stuck++; }
+  if (moved) commit(); else drawAll();
+  toast(moved ? moved + (moved === 1 ? ' item moved' : ' items moved') + ' inside the site.' + (stuck ? ' ' + stuck + ' do not fit; make them smaller or the site bigger.' : '') + (locked ? ' ' + locked + ' locked and left alone.' : '') : (stuck || locked) ? (stuck ? stuck + ' do not fit inside the outline.' : '') + (locked ? ' ' + locked + ' locked and left alone.' : '') : 'Everything is inside.');
+}
 function groupBounds(list) { let b = null; for (const it of list) { if (!it) continue; const q = M.bounds(it, S.plan); if (!q) continue; b = b ? [Math.min(b[0], q[0]), Math.min(b[1], q[1]), Math.max(b[2], q[2]), Math.max(b[3], q[3])] : q.slice(); } return b; }
+/* slide a group back inside the site if a nudge, copy or insert pushed it over the edge (it never shrinks) */
+function keepInside(list) {
+  const l = list.filter(Boolean); if (!l.length) return false; const reg = region(), pcs = piecesOf(l);
+  if (!reg.rect) { const d = O.nudgeInside(reg, pcs); if (d) { if (!d[0] && !d[1]) return false; l.forEach(it => M.moveItem(it, d[0], d[1])); return true; } toast('That does not fit inside the site outline.'); }
+  const pts = pcs.flat(), W = S.plan.site.w, H = S.plan.site.h, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];   // corners and centres only: a canopy or a path's width may hang over, as before
+  let dx = 0, dy = 0; if (b[0] < 0) dx = -b[0]; else if (b[2] > W) dx = W - b[2]; if (b[1] < 0) dy = -b[1]; else if (b[3] > H) dy = H - b[3];
+  if (b[2] - b[0] > W) dx = -b[0]; if (b[3] - b[1] > H) dy = -b[1];
+  if (!dx && !dy) return false; l.forEach(it => M.moveItem(it, r2(dx), r2(dy))); return true;
+}
+const BOX_DEF = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6], rows: [10, 4], building: [10, 8], greenhouse: [3, 2.4], pergola: [4, 3] };
+function finishOutline(d) {   // a corner drag ends (finger up, cancelled, or a second finger came down): check it, keep it, or put it back
+  if (!S.plan.site.poly) return;
+  if (!setPoly(S.plan.site.poly.map(q => q.slice()), true)) { if (d && d.orig) S.plan.site.poly = d.orig; toast('That outline would be too small or cross itself, so the corner went back.'); drawAll(); }
+}
 function wireCanvas() {
-  const pointers = new Map(); let drag = null, pinch = null, lineGest = -1;
+  const pointers = new Map(); let drag = null, pinch = null, lineGest = -1; getDrag = () => drag;
   svg.addEventListener('pointerdown', e => {
     svg.focus(); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } if (S.draft && S.draft.pts && lineGest >= 0) { if (lineGest === 0) S.draft = null; else S.draft.pts.length = Math.min(S.draft.pts.length, lineGest); lineGest = -1; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; return; }
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (drag && drag.ocorner != null) { const d0 = drag; drag = null; finishOutline(d0); } if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } if (S.draft && S.draft.pts && lineGest >= 0) { if (lineGest === 0) S.draft = null; else S.draft.pts.length = Math.min(S.draft.pts.length, lineGest); lineGest = -1; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; return; }
     const p = toWorld(e), sp = inSite([snap(p[0]), snap(p[1])]);
-    if (S.pickPoint) { const f = S.pickPoint; S.pickPoint = null; S.pickCancel = null; f([r2(Math.min(S.plan.site.w, Math.max(0, p[0]))), r2(Math.min(S.plan.site.h, Math.max(0, p[1])))]); return; }
+    if (S.pickPoint) { const f = S.pickPoint; S.pickPoint = null; S.pickCancel = null; { const q = inSite(p); f([r2(q[0]), r2(q[1])]); } return; }
     if (e.button === 1 || (e.button === 0 && e.altKey)) { drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: S.view.x, vy: S.view.y }; return; }
+    if (S.drawOutline && S.od) {   // drawing the outline: a tap or click adds a corner (a pinch or a drag does not)
+      if (e.pointerType === 'mouse' && e.button === 2) { if (S.od.pts.length >= 3) odClose(); return; }
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      drag = { otap: true, p: odPoint(p, e.shiftKey), x: e.clientX, y: e.clientY }; return;
+    }
     const hd = e.target.getAttribute && e.target.getAttribute('data-handle');
+    if (S.editOutline && S.plan.site.poly && !S.ctx && e.target.getAttribute) {   // dragging the corners of the site outline
+      const oc = e.target.getAttribute('data-ocorner'), om = e.target.getAttribute('data-omid');
+      if (oc != null) { drag = { ocorner: +oc, orig: S.plan.site.poly.map(q => q.slice()) }; return; }
+      if (om != null && S.plan.site.poly.length >= O.MAX_POLY_PTS) { toast('That is the most corners an outline can have.'); return; }
+      if (om != null) { const P = S.plan.site.poly, i = +om, a = P[i], b = P[(i + 1) % P.length]; drag = { orig: P.map(q => q.slice()) }; P.splice(i + 1, 0, [r2((a[0] + b[0]) / 2), r2((a[1] + b[1]) / 2)]); drag.ocorner = i + 1; drawScene(); return; }
+    }
     if (S.tool === 'select') {
       if (hd) { const it = byId([...S.sel][0]); drag = { handle: hd, it, start: JSON.stringify(it), sw: it.w, sh: it.h }; return; }
       const it = hitTest(p);
@@ -514,23 +783,32 @@ function wireCanvas() {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
     if (pinch && pointers.size === 2) { const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), bx = svg.getBoundingClientRect(), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; S.view.x += mx - pinch.mx; S.view.y += my - pinch.my; pinch.mx = mx; pinch.my = my; zoomBy((pinch.s * d / pinch.d) / S.view.scale, mx - bx.left, my - bx.top); return; }
     const p = toWorld(e);
+    if (S.drawOutline && S.od && !drag) { S.od.hover = odPoint(p, e.shiftKey); if (S.odG && S.odG.isConnected) { odFill(S.odG); odFields(); } else drawScene(); return; }
     if (S.tool === 'ground') { moveRing(p); if (drag && drag.sculpt) { sculptTo(p); return; } if (!drag) return; }
+    if (!drag && !S.draft && e.pointerType === 'mouse' && S.tool !== 'select' && S.tool !== 'ground' && (BOX_DEF[S.tool] || S.tool === 'plant')) { S.ghost = inSite([snap(p[0]), snap(p[1])]); const a = ghostAttrs(); if (S.ghostEl && S.ghostEl.isConnected && a) { for (const k in a.at) S.ghostEl.setAttribute(k, a.at[k]); } else drawScene(); return; }   // move the preview itself: redrawing a big plan on every mouse move would stutter
     if (S.draft && S.draft.pts && !drag) { S.draft.hover = inSite([snap(p[0]), snap(p[1])]); drawScene(); return; }
     if (!drag) return;
-    if (drag.tap) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag = null; return; }
+    if (drag.tap || drag.otap) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag = null; return; }
     if (drag.pan) { S.view.x = drag.vx + e.clientX - drag.sx; S.view.y = drag.vy + e.clientY - drag.sy; drawScene(); return; }
+    if (drag.ocorner != null) { const P = S.plan.site.poly, s = S.plan.site, np = P.map(q => q.slice()); np[drag.ocorner] = [Math.min(s.w, Math.max(0, snap(p[0]))), Math.min(s.h, Math.max(0, snap(p[1])))]; if (!O.selfIntersects(np)) { S.plan.site.poly = np; drag.moved = true; drawScene(); } return; }
     if (drag.draw) { S.draft.b = inSite([snap(p[0]), snap(p[1])]); drawScene(); return; }
     if (drag.move) {
       let dx = snap(p[0] - drag.from[0]), dy = snap(p[1] - drag.from[1]);
       if (!drag.gb) drag.gb = groupBounds(drag.moving.map(it => it));
-      if (drag.gb) { if (drag.gb[2] - drag.gb[0] <= S.plan.site.w) dx = Math.min(Math.max(dx, Math.min(-drag.gb[0], 0)), Math.max(S.plan.site.w - drag.gb[2], 0)); if (drag.gb[3] - drag.gb[1] <= S.plan.site.h) dy = Math.min(Math.max(dy, Math.min(-drag.gb[1], 0)), Math.max(S.plan.site.h - drag.gb[3], 0)); }   // a moved selection stops at the site edge
+      if (!drag.pieces) { drag.pieces = piecesOf(drag.moving); drag.free = region().rect || !drag.pieces.every(pc => O.containsConvex(region(), pc)); }   // a group already outside the outline moves freely (inside the canvas) until it is back in
+      if (!drag.free) { const d = O.fitDelta(region(), drag.pieces, dx - drag.last[0], dy - drag.last[1], drag.last[0], drag.last[1]); dx = r2(drag.last[0] + d[0]); dy = r2(drag.last[1] + d[1]); }
+      else if (drag.gb) { if (drag.gb[2] - drag.gb[0] <= S.plan.site.w) dx = Math.min(Math.max(dx, Math.min(-drag.gb[0], 0)), Math.max(S.plan.site.w - drag.gb[2], 0)); if (drag.gb[3] - drag.gb[1] <= S.plan.site.h) dy = Math.min(Math.max(dy, Math.min(-drag.gb[1], 0)), Math.max(S.plan.site.h - drag.gb[3], 0)); }   // a moved selection stops at the site edge
       if (dx === drag.last[0] && dy === drag.last[1]) return;
       drag.moving.forEach(it => M.moveItem(it, dx - drag.last[0], dy - drag.last[1])); drag.last = [dx, dy]; drag.moved = true; drawScene(); return;
     }
     if (drag.handle) {
       const it = drag.it;
-      if (drag.handle === 'size') { const [x, y] = M.rotPt([p[0] - it.x, p[1] - it.y], -it.rot); it.w = Math.max(0.1, snap(Math.abs(x) * 2)); it.h = Math.max(0.1, snap(Math.abs(y) * 2)); if (!it.rot) { it.w = Math.min(it.w, Math.max(drag.sw || 0, 2 * Math.max(0.05, Math.min(it.x, S.plan.site.w - it.x)))); it.h = Math.min(it.h, Math.max(drag.sh || 0, 2 * Math.max(0.05, Math.min(it.y, S.plan.site.h - it.y)))); } }
-      else { const i = +drag.handle.slice(2); it.pts[i] = inSite([snap(p[0]), snap(p[1])]); }
+      if (drag.handle === 'size') { const [x, y] = M.rotPt([p[0] - it.x, p[1] - it.y], -it.rot); it.w = Math.max(0.1, snap(Math.abs(x) * 2)); it.h = Math.max(0.1, snap(Math.abs(y) * 2)); if (!region().rect) { const nw = it.w, nh = it.h, sw = drag.sw || nw, sh = drag.sh || nh, fits = t => { it.w = sw + (nw - sw) * t; it.h = sh + (nh - sh) * t; return O.containsConvex(region(), O.boxCorners(it)); }; if (!fits(1)) { let lo = 0, hi = 1; for (let i = 0; i < 6; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; } fits(lo); it.w = Math.max(0.1, r2(it.w)); it.h = Math.max(0.1, r2(it.h)); } }
+      else if (!it.rot) { it.w = Math.min(it.w, Math.max(drag.sw || 0, 2 * Math.max(0.05, Math.min(it.x, S.plan.site.w - it.x)))); it.h = Math.min(it.h, Math.max(drag.sh || 0, 2 * Math.max(0.05, Math.min(it.y, S.plan.site.h - it.y)))); } }
+      else { const i = +drag.handle.slice(2), q = inSite([snap(p[0]), snap(p[1])]);
+        if (it.kind === 'shape') { const np = it.pts.map(z => z.slice()); np[i] = q; if (!O.selfIntersects(np) && Math.abs(O.area(np)) >= 0.01) it.pts[i] = q; }   // a corner never crosses another side: the shape would be lost on reload
+        else if (it.kind === 'wall' && it.retain) { const np = it.pts.map(z => z.slice()); np[i] = q; if (!EW.crossesItself(np) && np.reduce((n, z, k) => n + (k ? Math.hypot(z[0] - np[k - 1][0], z[1] - np[k - 1][1]) : 0), 0) >= 0.5) it.pts[i] = q; }   // a soil-holding wall never crosses or doubles back: it would stop holding soil on reload
+        else it.pts[i] = q; }
       drag.moved = true; drawScene();
     }
   });
@@ -539,31 +817,72 @@ function wireCanvas() {
     if (!drag) return;
     const d = drag; drag = null;
     if (d.tap) { if (pointers.size === 0 && !pinch) placeTap(d.p); return; }
+    if (d.otap) { if (pointers.size === 0 && !pinch && S.od) odAdd(d.p); return; }
+    if (d.ocorner != null) { finishOutline(d); return; }
     if (d.sculpt) { endSculpt(); return; }
     if (d.draw) {
       const dr = S.draft; S.draft = null;
       let [x0, y0] = dr.a, [x1, y1] = dr.b;
-      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = { bed: [2.4, 1.2], area: [4, 3], tank: [1.4, 1.4], bench: [2, 0.6], rows: [10, 4], building: [10, 8], greenhouse: [3, 2.4], pergola: [4, 3] }[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; const ox = Math.max(0, x1 - S.plan.site.w), oy = Math.max(0, y1 - S.plan.site.h); x0 = Math.max(0, x0 - ox); x1 = Math.max(x0, x1 - ox); y0 = Math.max(0, y0 - oy); y1 = Math.max(y0, y1 - oy); }   // a plain click makes a default-size box that stays inside the site
+      if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { const def = BOX_DEF[S.tool]; x1 = x0 + def[0]; y1 = y0 + def[1]; const ox = Math.max(0, x1 - S.plan.site.w), oy = Math.max(0, y1 - S.plan.site.h); x0 = Math.max(0, x0 - ox); x1 = Math.max(x0, x1 - ox); y0 = Math.max(0, y0 - oy); y1 = Math.max(y0, y1 - oy); }   // a plain click makes a default-size box that stays inside the site
+      if (!region().rect) {   // an outline: the box must fit inside it
+        const reg = region(), mk = (a, b) => ({ x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]), rot: 0 });
+        if (!O.containsConvex(reg, O.boxCorners(mk([x0, y0], [x1, y1])))) {
+          if (Math.abs(dr.b[0] - dr.a[0]) < 0.1 || Math.abs(dr.b[1] - dr.a[1]) < 0.1) { const bx = mk([x0, y0], [x1, y1]), d = O.nudgeInside(reg, [O.boxCorners(bx)]); if (!d) { toast('That does not fit inside the site outline.'); return; } x0 += d[0]; x1 += d[0]; y0 += d[1]; y1 += d[1]; }
+          else { const ax = dr.a[0], ay = dr.a[1], bx = dr.b[0], by = dr.b[1]; let lo = 0, hi = 1; for (let i = 0; i < 8; i++) { const m = (lo + hi) / 2; if (O.containsConvex(reg, O.boxCorners(mk([ax, ay], [ax + (bx - ax) * m, ay + (by - ay) * m])))) lo = m; else hi = m; } x0 = ax; y0 = ay; x1 = ax + (bx - ax) * lo; y1 = ay + (by - ay) * lo; if (Math.abs(x1 - x0) < 0.1 || Math.abs(y1 - y0) < 0.1) { toast('That does not fit inside the site outline.'); return; } }
+        }
+      }
       add(Object.assign({ kind: S.tool, name: S.tool === 'rows' ? M.CROPS[S.crop][0] + ' rows' : M.KINDS[S.tool].name, x: r2((x0 + x1) / 2), y: r2((y0 + y1) / 2), w: r2(Math.abs(x1 - x0)), h: r2(Math.abs(y1 - y0)), rot: 0 }, S.tool === 'rows' ? { crop: S.crop } : {}));
       return;
     }
     if ((d.move || d.handle) && d.moved) commit();
   };
-  svg.addEventListener('pointerup', e => { up(e); lineGest = -1; }); svg.addEventListener('pointercancel', e => { if (drag && drag.tap) drag = null; up(e); lineGest = -1; });   // a cancelled touch never places anything
+  svg.addEventListener('pointerleave', () => { if (S.ghost) { S.ghost = null; drawScene(); } });
+  svg.addEventListener('pointerup', e => { up(e); lineGest = -1; }); svg.addEventListener('pointercancel', e => { if (drag && (drag.tap || drag.otap)) drag = null; up(e); lineGest = -1; });   // a cancelled touch never places anything
   svg.addEventListener('dblclick', () => { if (S.draft && S.draft.pts) finishLine(); else if (S.sel.size === 1) { const it = byId([...S.sel][0]); if (it && it.kind === 'block') editBlock(it.def); } });
-  svg.addEventListener('wheel', e => { e.preventDefault(); const b = svg.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - b.left, e.clientY - b.top); }, { passive: false });
+  let wheelAt = 0;
+  svg.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey && S.sel.size) { const now = performance.now(); const quiet = now - wheelAt > 250; wheelAt = now; if (quiet) rotateSel(((e.deltaY || e.deltaX) < 0 ? -1 : 1) * 15); return; }   // one turn per notch, not one per trackpad event
+    const b = svg.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - b.left, e.clientY - b.top); }, { passive: false });
 }
 const isoPlus = (iso, days) => new Date(Date.parse(iso + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10);
+/* a new retaining wall holds soil on its uphill side; on flat ground it builds up behind (the owner's rule: otherwise use a fence) */
+function wallDefaults(pts) {
+  const fin = EW.makeFinished(S.plan.site, { items: [] }); let diff = 0, n = 0;
+  for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 1e-6) continue; const k = Math.max(1, Math.min(20, Math.ceil(L / 2)));
+    for (let j = 0; j < k; j++) { const t = (j + 0.5) / k, x = a[0] + dx * t, y = a[1] + dy * t, lx = dy / L, ly = -dx / L; diff += fin.natural(x + lx * 3, y + ly * 3) - fin.natural(x - lx * 3, y - ly * 3); n++; } }
+  const m = n ? diff / n : 0;
+  return { high: m < -0.05 ? 'right' : 'left', split: Math.abs(m) > 0.05 ? 0.5 : 1 };
+}
+function wallPanel(it) {
+  const mat = pickF('Material', it, 'material', [['sleeper', 'Timber sleepers'], ['stone', 'Stone'], ['block', 'Concrete block'], ['brick', 'Brick']]);
+  if (!it.retain) {
+    put(numF('Height (m)', it, 'height', 0.05, 0.1, 4), mat, el('p', { class: 'small muted', text: 'Older-style wall: it stands in the 3D view but does not change the ground.' }),
+      S.ctx ? null : el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Make it hold back soil', title: 'The ground behind the wall is built up to the wall top and the ground in front is dug down, so you do not have to sculpt the step yourself.', onclick: () => { if (EW.crossesItself(it.pts) || it.pts.length > EW.MAX_RETAIN_PTS) { toast('This wall crosses or doubles back on itself, so it cannot hold soil. Draw it as separate straight runs.', 6000); return; } it.height = Math.min(3, Math.max(0.15, it.height)); it.retain = wallDefaults(it.pts); S.contours = true; commit(); } })]));
+    return;
+  }
+  const r = it.retain, sel = el('select', { 'aria-label': 'How the step is made', onchange: e => { r.split = +e.target.value; commit(); } }, [['0', 'Dig into the slope'], ['0.5', 'Half dug, half built up'], ['1', 'Build up behind the wall']].map(([v, l]) => el('option', { value: v, text: l })));
+  sel.value = String([0, 0.5, 1].reduce((b, v) => (Math.abs(v - r.split) < Math.abs(b - r.split) ? v : b), 0.5));
+  const vol = (() => { try { const fin = EW.finished(S.plan), rg = region(), v = fin.volumes((x, y) => O.inside(rg, x, y), it.id); return v.perWall.find(w => w.id === it.id); } catch { return null; } })();
+  put(el('label', { class: 'small v3-chk' }, [el('input', { type: 'checkbox', checked: true, onchange: () => { delete it.retain; commit(); } }), ' Holds back soil']),
+    numF('Wall height (m): soil is held up to this', it, 'height', 0.05, 0.15, 3), mat,
+    el('label', { class: 'small pl-field' }, ['How the step is made', sel]),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Flip: hold the soil on the other side', title: 'The small ticks on the plan mark the LOW side, the side away from the soil.', onclick: () => { r.high = r.high === 'left' ? 'right' : 'left'; commit(); } })]),
+    el('p', { class: 'small muted', text: 'Ticks on the plan mark the low side. On flat ground a wall builds up behind it; on a slope it holds the uphill side.' }),
+    vol ? el('p', { class: 'small', text: 'Wall shows about ' + r2(vol.faceMin) + (vol.faceMax - vol.faceMin > 0.02 ? ' to ' + r2(vol.faceMax) : '') + ' m of face over ' + r2(vol.length) + ' m. Soil moved: about ' + r2(vol.fill) + ' m³ filled, ' + r2(vol.cut) + ' m³ cut.' }) : null,
+    el('p', { class: 'small muted', text: 'These are estimates for laying out a yard, not an engineered design. For walls over about 1 m, or near buildings, boundaries or roads, check your council\'s rules and ask a professional. Check for underground services before you dig.' }));
+}
 function finishLine() {
   const dr = S.draft; S.draft = null;
   const pts = dr.pts.filter((p, i) => i === 0 || Math.hypot(p[0] - dr.pts[i - 1][0], p[1] - dr.pts[i - 1][1]) > 0.01);
   if (pts.length < 2) { drawAll(); return; }
-  add({ kind: S.tool, name: M.KINDS[S.tool].name, pts });
+  const bad = S.tool === 'wall' && (EW.crossesItself(pts) || pts.length > EW.MAX_RETAIN_PTS);
+  if (bad) toast('This wall crosses or doubles back on itself, so it is an ordinary wall and does not hold soil. Draw it as separate straight runs to hold soil.', 6000);
+  else if (S.tool === 'wall') S.contours = true;
+  add(S.tool === 'wall' ? { kind: 'wall', name: M.KINDS.wall.name, pts, height: 0.6, ...(bad ? {} : { retain: wallDefaults(pts) }) } : { kind: S.tool, name: M.KINDS[S.tool].name, pts });
 }
 function add(raw) {
   const it = M.cleanPlan({ format: M.FORMAT, version: 1, items: [Object.assign({ id: M.newId(), folder: M.KINDS[raw.kind].folder }, raw)] }).items[0];
   if (!it) return;
-  items().push(it); S.sel = new Set([it.id]); commit();
+  items().push(it); S.sel = new Set([it.id]); S.pending = it.id; commit();
   if (!S.keep) setTool('select');   // one item per pick: choose the tool again for the next one (tick Keep the tool on to place several)
 }
 
@@ -708,13 +1027,14 @@ function openGroundWizard(start) {
 
 /* ---------- the ground under a bed, bench, tank, area or crop rows ---------- */
 function groundUnderPanel(it) {
-  const g = groundGrid(); if (!g) return null;
+  const g0 = groundGrid(); if (!g0) return null;
+  const fw = EW.finished(S.plan), walled = fw.count > 0, g = walled ? fw.grid : g0;   // with soil-holding walls, read the finished ground
   const u = TR.groundUnder(g, it.x, it.y, it.w, it.h, it.rot || 0), cm = v => Math.round(v * 100);
   const how = el('select', { 'aria-label': 'Level it at' }, [['mean', 'the average height (cut and fill)'], ['min', 'its lowest point (dig in)'], ['max', 'its highest point (build up)']].map(([v, l]) => el('option', { value: v, text: l })));
   const words = u.fall < 0.02 ? 'The ground here is level.' : 'The ground under it falls ' + cm(u.fall) + ' cm (from ' + r2(u.max) + ' m to ' + r2(u.min) + ' m).' + (it.kind === 'bed' && (it.raised || 0) >= 0.02 ? ' In 3D the bed is built level, with deeper boards on the low side.' : '');
   return el('div', { class: 'pl-guide' }, [el('b', { text: 'Ground under this' }), el('p', { class: 'small', text: words }),
-    u.fall < 0.02 ? null : el('label', { class: 'small pl-field' }, ['Level it at', how]),
-    u.fall < 0.02 ? null : el('button', { type: 'button', class: 'btn sm', text: 'Level the ground under this', onclick: () => {
+    u.fall < 0.02 ? null : walled ? el('p', { class: 'small muted', text: 'Soil-holding walls are shaping the ground in this plan, so levelling here is done by adjusting the wall (height or how the step is made).' }) : el('label', { class: 'small pl-field' }, ['Level it at', how]),
+    u.fall < 0.02 || walled ? null : el('button', { type: 'button', class: 'btn sm', text: 'Level the ground under this', onclick: () => {
       const w = { cell: g.cell, nx: g.nx, ny: g.ny, z: g.z.slice() }, level = { mean: u.mean, min: u.min, max: u.max }[how.value];
       TR.levelBox(w, it.x, it.y, it.w, it.h, it.rot || 0, level, Math.max(0.5, Math.min(2, Math.max(it.w, it.h) * 0.25)));
       S.plan.site.ground = TR.packGrid(w); commit(); toast('Ground levelled at ' + r2(level) + ' m under ' + (it.name || 'this') + ', blending into the slope around it. Ctrl+Z undoes it.', 5000);
@@ -734,6 +1054,36 @@ function groundPanel(s) {
   } else box.append(el('b', { text: 'Ground heights' }), el('p', { class: 'small', text: 'The ground is flat until you add heights. Shape it with the Ground wizard (slopes, mounds, ponds, terraces, swales) or the Shape ground brushes (G), or bring in real mapping data from a file: an ASCII grid (.asc, such as a free 1 m LiDAR ground model) or a list of survey points (.csv or .xyz with x, y, height on each line). The file stays on your device.' }),
     el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm primary', text: 'Ground wizard…', onclick: () => openGroundWizard() }), el('button', { type: 'button', class: 'btn sm', text: 'Add ground heights from a file…', onclick: importGround })]));
   return box;
+}
+async function importDxf() {
+  const f = await pickFile('.dxf,text/plain'); if (!f) return;
+  if (f.size > 30e6) { toast('That file is too big (over 30 MB). Export just the site boundary from your CAD program.', 6000); return; }
+  let r; try { r = DX.parseDxf(await f.text()); } catch (e) { toast(e.message || 'That file could not be read.', 6000); return; }
+  if (!r.outlines.length) { toast('No closed outlines found. In your CAD program, close the boundary (a closed polyline) and save as ASCII DXF.' + (r.skipped ? ' ' + r.skipped + ' parts were skipped.' : ''), 7000); return; }
+  const units = el('select', { 'aria-label': 'Drawing units' }, [['0.001', 'Millimetres'], ['0.01', 'Centimetres'], ['1', 'Metres'], ['0.3048', 'Feet'], ['0.0254', 'Inches']].map(([v, l]) => el('option', { value: v, text: l })));
+  units.value = r.factor && [...units.options].some(o => +o.value === r.factor) ? String(r.factor) : '1';
+  const big = el('input', { type: 'checkbox', checked: true }), more = el('input', { type: 'checkbox', checked: r.outlines.length > 1 }), msg = el('p', { class: 'small', role: 'status' });
+  const note = () => { const m = DX.fitToPlan(r.outlines, +units.value); msg.className = 'small'; msg.textContent = 'The drawing measures ' + m.w + ' m by ' + m.h + ' m.' + (m.w > 5000 || m.h > 5000 ? ' That is bigger than the planner allows (5000 m): check the units.' : (m.w < 1 || m.h < 1 ? ' That is under 1 m: check the units.' : '')); };
+  units.addEventListener('change', note); note();
+  const d = dialog('Import from a CAD drawing (DXF)', [el('div', {}, [
+    el('p', { text: r.outlines.length + (r.outlines.length === 1 ? ' closed outline' : ' closed outlines') + ' found' + (r.factor ? '; the file says its units are ' + units.selectedOptions[0].text.toLowerCase() + '.' : '; the file does not say its units, so choose them.') }),
+    el('label', { class: 'small pl-field' }, ['Units in the drawing', units]), msg,
+    el('label', { class: 'small pl-check' }, [big, ' Use the biggest outline as the site outline (the site size is set to fit it)']),
+    r.outlines.length > 1 ? el('label', { class: 'small pl-check' }, [more, ' Add the other ' + (r.outlines.length - 1) + ' as free-form shapes (garden beds; change the type in the panel)']) : null,
+    S.plan.site.ground ? el('p', { class: 'small pl-warn', text: 'This plan has ground heights. Changing the site size will not move them, so check the ground afterwards.' }) : null,
+    el('p', { class: 'small muted', text: 'Only outlines are read. Layers, colours, curves other than polyline bends, text and 3D parts are ignored. You can undo this.' }),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Import', onclick: () => {
+      const m = DX.fitToPlan(r.outlines, +units.value);
+      if (m.w > 5000 || m.h > 5000 || m.w < 1 || m.h < 1) { toast('Check the units: the drawing would be ' + m.w + ' m by ' + m.h + ' m.', 5000); return; }
+      const sd = S.plan.site; let n = 0, rejected = 0;
+      if (big.checked) { const nw = Math.max(1, Math.ceil(m.w * 100) / 100), nh = Math.max(1, Math.ceil(m.h * 100) / 100), c = O.cleanPoly(m.rings[0], nw, nh); if (!c) { toast('The biggest outline crosses itself or is too small to use as a site outline. Nothing was changed.', 6000); return; } sd.w = nw; sd.h = nh; sd.poly = c; }
+      const rest = m.rings.slice(big.checked ? 1 : 0), want = (big.checked ? more.checked : true) ? rest : [];
+      const raw = want.slice(0, 100).map((pts, i) => ({ id: M.newId(), kind: 'shape', style: 'bed', folder: 'beds', name: 'Shape ' + (i + 1), pts }));
+      const clean = M.cleanPlan({ format: M.FORMAT, version: 1, items: raw }).items; rejected = raw.length - clean.length;
+      for (const it of clean) { items().push(it); n++; }
+      d.close(); commit();
+      toast('Imported' + (big.checked ? ' the site outline (' + sd.w + ' x ' + sd.h + ' m)' : '') + (n ? (big.checked ? ' and ' : ' ') + n + ' shapes' : '') + '.' + (rejected ? ' ' + rejected + ' outlines were skipped (they cross themselves or are tiny).' : '') + (want.length > 100 ? ' Only the first 100 shapes were added.' : ''), 7000);
+    } }), el('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => d.close() })])])]);
 }
 async function importGround() {
   const f = await pickFile('.asc,.tif,.tiff,.txt,.csv,.xyz,image/tiff,text/plain,text/csv'); if (!f) return;
@@ -766,28 +1116,31 @@ async function importGround() {
 function wireKeys() {
   document.addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('input,select,textarea,[contenteditable]') || document.querySelector('dialog[open]')) return;
+    if (S.drawOutline && S.od && S.tab !== 'setup' && odType(e)) { e.preventDefault(); return; }
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (S.tab === 'setup' && !(mod && (k === 'z' || k === 'y')) && !(S.pickPoint && e.key === 'Escape')) return;
+    if ((e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}') && S.sel.size) { e.preventDefault(); rotateSel((e.key === '[' || e.key === '{' ? -1 : 1) * (e.shiftKey ? 45 : 15)); return; }
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? hist.redo() : hist.undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); hist.redo(); return; }
     if (mod && k === 'd') { e.preventDefault(); duplicate(); return; }
     if (mod && k === 'b') { e.preventDefault(); makeBlockFromSel(); return; }
     if (e.key === 'Escape' && sculptDrag) { cancelSculpt(); return; }
     if (e.key === 'Escape' && S.pickPoint) { const c = S.pickCancel; S.pickPoint = null; S.pickCancel = null; if (c) c(); return; }
+    if (e.key === 'Escape' && S.editOutline && !S.draft) { S.editOutline = false; drawAll(); return; }
     if (e.key === 'Escape') { if (S.draft) { S.draft = null; drawAll(); } else if (S.tool !== 'select') { S.keep = false; setTool('select'); } else if (S.ctx) doneEditing(); else select(null); return; }
     if (e.key === 'Enter' && S.draft && S.draft.pts) { finishLine(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.size) { e.preventDefault(); removeSel(); return; }
     if (e.key.startsWith('Arrow') && S.sel.size) {
       e.preventDefault(); const g = S.plan.site.grid * (e.shiftKey ? 5 : 1), d = { ArrowLeft: [-g, 0], ArrowRight: [g, 0], ArrowUp: [0, -g], ArrowDown: [0, g] }[e.key];
-      [...S.sel].map(byId).filter(it => it && !it.locked).forEach(it => M.moveItem(it, d[0], d[1])); commit('nudge'); return;
+      [...S.sel].map(byId).filter(it => it && !it.locked).forEach(it => M.moveItem(it, d[0], d[1])); keepInside([...S.sel].map(byId).filter(it => it && !it.locked)); commit('nudge'); return;
     }
-    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task', r: 'rows', g: 'ground', h: 'building', e: 'greenhouse', o: 'pergola', t: 'trellis', k: 'wall' }[k]; if (t) setTool(t); }
+    if (!mod && !e.altKey) { const t = { v: 'select', b: 'bed', a: 'area', p: 'path', f: 'fence', l: 'plant', w: 'tank', d: 'pipe', s: 'bench', n: 'note', j: 'task', r: 'rows', g: 'ground', h: 'building', e: 'greenhouse', o: 'pergola', t: 'trellis', k: 'wall', x: 'shape' }[k]; if (t) setTool(t); }
   });
 }
 function removeSel() { const L = items(); const keep = L.filter(it => !S.sel.has(it.id) || it.locked); L.length = 0; L.push(...keep); S.sel.clear(); commit(); }
 function duplicate() {
   const L = items(), copies = [...S.sel].map(byId).filter(Boolean).map(it => M.moveItem(Object.assign(JSON.parse(JSON.stringify(it)), { id: M.newId(), locked: false }), S.plan.site.grid * 2, S.plan.site.grid * 2));
-  if (!copies.length) return; L.push(...copies); S.sel = new Set(copies.map(c => c.id)); commit();
+  if (!copies.length) return; keepInside(copies); L.push(...copies); S.sel = new Set(copies.map(c => c.id)); commit();
 }
 
 /* ---------- blocks ---------- */
@@ -804,7 +1157,7 @@ function insertBlock(defId) {
   if (S.ctx && !M.canPlace(S.plan, defId, S.ctx)) { toast('A block cannot go inside itself.'); return; }
   const b = svg.getBoundingClientRect(), v = S.view, x = snap((b.width / 2 - v.x) / v.scale), y = snap((b.height / 2 - v.y) / v.scale);
   const ins = { id: M.newId(), kind: 'block', folder: 'beds', name: S.plan.blocks[defId].name, hidden: false, locked: false, off: false, def: defId, x, y, rot: 0 };
-  items().push(ins); S.sel = new Set([ins.id]); commit();
+  items().push(ins); keepInside([ins]); S.sel = new Set([ins.id]); commit();
 }
 const library = () => { const l = store.get(K.lib, []); return Array.isArray(l) ? l : []; };
 function saveToLibrary(defId) {
@@ -861,18 +1214,84 @@ const put = (...n) => {
     (cur || propsEl).append(x);
   }
 };
+/* width and depth: with an outline they scale it, so the shape keeps its proportions */
+const sizeF = (label, key) => field(label, S.plan.site[key], v => {
+  const s = S.plan.site; if (!Number.isFinite(v)) return; const nv = Math.min(5000, Math.max(1, Math.round(v * 1000) / 1000)), old = s[key];
+  if (s.poly && old > 0) { const k = nv / old, i = key === 'w' ? 0 : 1; s.poly = s.poly.map(p => { const q = p.slice(); q[i] = Math.round(q[i] * k * 1000) / 1000; return q; }); }
+  s[key] = nv;
+}, { type: 'number', step: '1', min: '1', max: '5000', inputmode: 'decimal' });
+const fmtArea = a => a >= 5000 ? (a / 10000).toFixed(2) + ' ha (' + Math.round(a) + ' m²)' : Math.round(a * 10) / 10 + ' m²';
+/* type a side's length: the corner at its far end slides along the side, the other corners stay where they are */
+function setSide(pts, i, L) { const n = pts.length, a = pts[i], b = pts[(i + 1) % n], d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, np = pts.map(p => p.slice()); np[(i + 1) % n] = [r2(a[0] + (b[0] - a[0]) / d * L), r2(a[1] + (b[1] - a[1]) / d * L)]; return np; }
+async function askSide(L, apply) {   // click a length on the plan, type the new one
+  const v = await promptBox('Side length', 'Length (m)', String(r2(L)), { okText: 'Set', max: 10 }); if (v == null) return;
+  const n = Number(String(v).replace(',', '.')); if (!(n >= 0.1 && n <= 5000)) { toast('Type a length of at least 0.1 m.'); return; } apply(n);
+}
+function shapeSides(it, np) {
+  if (O.selfIntersects(np) || Math.abs(O.area(np)) < 0.01) { toast('That length makes the shape cross itself.'); drawAll(); return; }
+  if (np.some(q => { const c = clampSite(q); return c[0] !== q[0] || c[1] !== q[1]; })) { toast('That side would reach outside the site.'); drawAll(); return; }
+  it.pts = np; commit();
+}
+function sideRows(pts, apply) {
+  const rows = pts.map((a, i) => { const b = pts[(i + 1) % pts.length], L = r2(Math.hypot(b[0] - a[0], b[1] - a[1]));
+    const inp = el('input', { type: 'number', step: '0.1', min: '0.1', value: L, 'aria-label': 'Side ' + (i + 1) + ' length (m)', onchange: e => { const v = Number(e.target.value); if (!(v >= 0.1)) { drawAll(); return; } apply(setSide(pts, i, v)); } });
+    return el('label', { class: 'small pl-field' }, ['Side ' + (i + 1) + ' (m)', inp]); });
+  return el('details', { class: 'pl-sides' }, [el('summary', { class: 'small', text: 'Side lengths (type one to change it)' }), el('div', {}, rows)]);
+}
+function fenceRing(ring, name) {   // a fence round a closed outline: the corners, then back to the first
+  const pts = ring.map(p => [p[0], p[1]]); pts.push([ring[0][0], ring[0][1]]);
+  add({ kind: 'fence', name, pts });
+}
+function shapePanel() {
+  const s = S.plan.site, reg = region(), poly = s.poly, box = [];
+  const cur = poly ? (['L', 'T', 'triangle', 'trapezoid'].find(n => { const p = O.presets(n, s.w, s.h); return p && JSON.stringify(O.cleanPoly(p, s.w, s.h)) === JSON.stringify(poly); }) || 'custom') : 'rect';
+  const sl = el('select', { 'aria-label': 'Site shape', onchange: e => { const v = e.target.value; if (v === 'custom') return; if (v === 'rect') setPoly(null); else setPoly(O.presets(v, s.w, s.h)); } }, [...O.SHAPES.map(([v, l]) => el('option', { value: v, text: l })), ...(cur === 'custom' ? [el('option', { value: 'custom', text: 'Custom shape' })] : [])]);
+  sl.value = cur; box.push(el('label', { class: 'small pl-field' }, ['Site shape', sl]));
+  box.push(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: poly ? 'Draw the outline again' : 'Draw the outline', title: 'Click each corner of the site like a CAD polyline, or type a length and angle. Esc cancels.', onclick: startOutline })]));
+  box.push(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Import outline from CAD (DXF)…', title: 'Reads closed outlines from a DXF drawing and uses the biggest as the site outline.', onclick: importDxf })]));
+  box.push(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Fence the boundary', title: 'Adds a fence all the way round the site edge. You can change its style, height and colour, and delete a section by editing its corners.', onclick: () => fenceRing(poly || [[0, 0], [s.w, 0], [s.w, s.h], [0, s.h]], 'Boundary fence') })]));
+  const a = poly ? O.area(reg.outer) : s.w * s.h, per = poly ? O.perimeter(reg.outer) : 2 * (s.w + s.h);
+  box.push(el('p', { class: 'small muted', text: 'Area ' + fmtArea(a) + ' · edge ' + (per >= 1000 ? (per / 1000).toFixed(2) + ' km' : Math.round(per * 10) / 10 + ' m') }));
+  const out = outsideIds();
+  if (out.length) box.push(el('div', { class: 'pl-warn small' }, [el('span', { text: out.length + (out.length === 1 ? ' item is' : ' items are') + ' outside the outline (red dashes). ' }), el('button', { type: 'button', class: 'btn sm', text: 'Move inside', onclick: moveOutsideIn })]));
+  if (poly) {
+    const rows = [];
+    poly.forEach((p, i) => {
+      const edit = k => e => { const v = Number(e.target.value); if (!Number.isFinite(v)) { drawAll(); return; } const np = poly.map(q => q.slice()); np[i][k] = Math.min(k ? s.h : s.w, Math.max(0, v)); setPoly(np); };
+      rows.push(el('span', { class: 'n', text: String(i + 1) }), el('label', { class: 'small pl-field' }, [i ? '' : 'x (m)', el('input', { type: 'number', step: '0.5', value: p[0], 'aria-label': 'Corner ' + (i + 1) + ' x', onchange: edit(0) })]), el('label', { class: 'small pl-field' }, [i ? '' : 'y (m)', el('input', { type: 'number', step: '0.5', value: p[1], 'aria-label': 'Corner ' + (i + 1) + ' y', onchange: edit(1) })]),
+        el('button', { type: 'button', class: 'btn sm', 'aria-label': 'Remove corner ' + (i + 1), title: 'Remove this corner', disabled: poly.length <= 3, text: '✕', onclick: () => { const np = poly.filter((_, j) => j !== i); setPoly(np); } }));
+    });
+    box.push(sideRows(poly, np => setPoly(np)), el('div', { class: 'pl-corners' }, rows), el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm' + (S.editOutline ? ' primary' : ''), 'aria-pressed': String(!!S.editOutline), text: S.editOutline ? 'Done moving corners' : 'Move corners on the plan', onclick: () => { S.editOutline = !S.editOutline; if (S.editOutline && S.tab === 'setup') showTab('plan'); drawAll(); } }), el('button', { type: 'button', class: 'btn sm', text: 'Add a corner', disabled: poly.length >= O.MAX_POLY_PTS, onclick: () => { let bi = 0, bl = -1; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L > bl) { bl = L; bi = i; } }); const p = poly[bi], q = poly[(bi + 1) % poly.length], np = poly.map(x => x.slice()); const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1, off = 0.5 * Math.min(1, L / 4); np.splice(bi + 1, 0, [Math.round(((p[0] + q[0]) / 2 - (q[1] - p[1]) / L * off) * 1000) / 1000, Math.round(((p[1] + q[1]) / 2 + (q[0] - p[0]) / L * off) * 1000) / 1000]); setPoly(np); } })]));
+  }
+  return () => put(...box);
+}
+/* plant heights: the Height box stretches the plant in 3D when it differs from the crop's usual height, so a tall breeding line looks tall */
+function heightTools(it) {
+  const usual = (M.CROPS[it.crop] || [])[3], same = p => p.kind === 'plant' && p.id !== it.id && !p.locked;
+  const all = items().filter(same), byCrop = all.filter(p => p.crop === it.crop), byVar = it.variety ? byCrop.filter(p => p.variety === it.variety) : [];
+  const btn = (text, list, title) => el('button', { type: 'button', class: 'btn sm', text, title, disabled: !list.length, onclick: () => { list.forEach(p => { p.height = it.height; }); commit(); toast(list.length + (list.length === 1 ? ' planting' : ' plantings') + ' set to ' + it.height + ' m.'); } });
+  return el('div', { class: 'small' }, [
+    el('p', { class: 'small muted', text: usual ? 'Usual height for ' + (M.CROPS[it.crop][0] || 'this crop') + ': ' + usual + ' m. A different height stretches it in the 3D view, for example a tall line you are breeding.' : 'A different height stretches the plant in the 3D view.' }),
+    el('div', { class: 'actions' }, [usual && it.height !== usual ? el('button', { type: 'button', class: 'btn sm', text: 'Back to usual height', onclick: () => { it.height = usual; commit(); } }) : null,
+      btn('Same height for every ' + ((M.CROPS[it.crop] || ['crop'])[0]).toLowerCase() + ' (' + byCrop.length + ')', byCrop, 'Give every other planting of this crop this height'),
+      it.variety ? btn('Same for every ' + it.variety + ' (' + byVar.length + ')', byVar, 'Give every other planting of this variety this height') : null].filter(Boolean))]);
+}
 function planFields() {
     const s = S.plan.site;
     put(el('div', { class: 'pane-head' }, [el('h3', { text: 'Plan' })]),
       field('Name', S.plan.name, v => { S.plan.name = String(v).slice(0, 80) || 'My plan'; }, { maxlength: '80' }),
       sec('Size and north'),
-      el('div', { class: 'pl-row' }, [numF('Width (m)', s, 'w', 1, 1, 5000), numF('Depth (m)', s, 'h', 1, 1, 5000)]),
+      el('div', { class: 'pl-row' }, [sizeF('Width (m)', 'w'), sizeF('Depth (m)', 'h')]),
+      shapePanel(),
       numF('North points (degrees, 0 = up)', s, 'north', 5, -360, 360),
       sec('Location and planting guide'),
       el('label', { class: 'small pl-field' }, ['Country (for the planting guide)', (() => { const sl = el('select', { onchange: e => { s.country = e.target.value; s.zone = s.country === 'AU' ? zoneFromLat(s.lat) : ''; commit(); } }, [el('option', { value: '', text: 'Choose your country' })].concat(COUNTRIES.map(([v, l]) => el('option', { value: v, text: l + (PACKS[v] ? '' : ' (guide coming)') })))); sl.value = s.country; return sl; })()]),
       PACKS[s.country] ? el('label', { class: 'small pl-field' }, ['Climate zone', (() => { const sl = el('select', { onchange: e => { s.zone = e.target.value; commit(); } }, [el('option', { value: '', text: 'Choose your zone' })].concat((() => { const out = [], groups = {}; for (const [v, l, g] of PACKS[s.country].zones) { const o = el('option', { value: v, text: l }); if (!g) out.push(o); else { if (!groups[g]) { groups[g] = el('optgroup', { label: g }); out.push(groups[g]); } groups[g].append(o); } } return out; })())); sl.value = s.zone; return sl; })()]) : null,
       located() ? null : el('p', { class: 'small pl-warn', text: 'Planting guide: ' + MESSAGE }),
       el('div', { class: 'pl-row' }, [numF('Latitude', s, 'lat', 0.1, -90, 90), numF('Longitude', s, 'lon', 0.1, -180, 180)]),
+      sec('Plant heights in 3D'),
+      field('Height of all plants (%)', Math.round((s.heightScale || 1) * 100), v => { if (Number.isFinite(v)) { const k = Math.min(200, Math.max(50, Math.round(v))) / 100; if (k === 1) delete s.heightScale; else s.heightScale = k; } }, { type: 'number', step: '5', min: '50', max: '200', inputmode: 'numeric' }),
+      el('p', { class: 'small muted', text: '100 is the usual height. Use it to see a taller or shorter crop year; set one plant\'s own height on the plant.' }),
       sec('Ground heights'),
       groundPanel(s),
       el('label', { class: 'small pl-field' }, ['Snap to', (() => { const sl = el('select', { onchange: e => { s.grid = +e.target.value; commit(); } }, [0.1, 0.25, 0.5, 1].map(g => el('option', { value: String(g), text: g * 100 + ' cm' }))); sl.value = String(s.grid); return sl; })()]),
@@ -932,7 +1351,7 @@ function drawProps() {
   if (it.kind === 'path') put(numF('Width (m)', it, 'width', 0.1, 0.1, 20));
   if (it.kind === 'fence') put(numF('Height (m)', it, 'height', 0.1, 0.1, 6), pickF('Style', it, 'style', [['palings', 'Timber palings'], ['pickets', 'Pickets'], ['slats', 'Horizontal slats'], ['wire', 'Wire and posts'], ['panels', 'Steel panels']]), field('Colour (leave for the standard)', it.colour || '#6b5238', v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.colour = v; }, { type: 'color' }));
   if (it.kind === 'trellis') put(numF('Height (m)', it, 'height', 0.1, 0.3, 5), pickF('Style', it, 'style', [['wire', 'Wires between posts'], ['lattice', 'Timber lattice'], ['mesh', 'Mesh panel']]), el('p', { class: 'small muted', text: 'For climbing beans, peas, grapes, passionfruit and espalier.' }));
-  if (it.kind === 'wall') put(numF('Height (m)', it, 'height', 0.05, 0.1, 4), pickF('Material', it, 'material', [['sleeper', 'Timber sleepers'], ['stone', 'Stone'], ['block', 'Concrete block'], ['brick', 'Brick']]), el('p', { class: 'small muted', text: 'In 3D the wall stands on the lower ground and its top follows the higher side. Shape the ground (or use the Ground wizard, Level) to make the terrace behind it.' }));
+  if (it.kind === 'wall') wallPanel(it);
   if (it.kind === 'building') put(numF('Wall height (m)', it, 'wallH', 0.1, 0.5, 30),
     pickF('Roof', it, 'roof', [['gable', 'Gable (two slopes)'], ['hip', 'Hip (four slopes)'], ['skillion', 'Skillion (one slope)'], ['flat', 'Flat']]),
     it.roof === 'flat' ? null : numF('Roof pitch (degrees)', it, 'pitch', 1, 0, 60),
@@ -943,13 +1362,23 @@ function drawProps() {
   if (it.kind === 'greenhouse') put(numF('Wall height (m)', it, 'wallH', 0.1, 0.5, 8), field('Frame colour', it.frame, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.frame = v; }, { type: 'color' }));
   if (it.kind === 'pergola') put(numF('Height (m)', it, 'height', 0.1, 1, 6), pickF('Cover', it, 'cover', [['open', 'Open rafters'], ['shade', 'Shade cloth'], ['vine', 'Grown over with a vine'], ['roof', 'Clear roof sheets']]), field('Timber colour', it.colour, v => { if (/^#[0-9a-f]{6}$/i.test(v)) it.colour = v; }, { type: 'color' }));
   if ((it.kind === 'bed' || it.kind === 'area') && !S.ctx) put((() => { const cb = el('input', { type: 'checkbox', checked: it.shape === 'round', onchange: e => { if (e.target.checked) it.shape = 'round'; else delete it.shape; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Round (fits a circle or oval in the box)']); })());
-  if (k.line) put(el('p', { class: 'small muted', text: 'Length: ' + r2(it.pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - it.pts[i - 1][0], p[1] - it.pts[i - 1][1]) : 0), 0)) + ' m. Drag the corner squares to reshape.' }));
+  if (it.kind === 'shape') {
+    const a = Math.abs(O.area(it.pts)), per = O.perimeter(it.pts);
+    put(pickF('Type', it, 'style', [['bed', 'Garden bed'], ['area', 'Area (lawn, gravel, paving)'], ['building', 'Building'], ['pond', 'Pond or dam']]),
+      el('p', { class: 'small muted', text: 'Area ' + fmtArea(a) + ' · edge ' + Math.round(per * 10) / 10 + ' m. Drag the corner squares to reshape.' }));
+    if (it.style === 'bed') put(numF('Raised height (m)', it, 'raised', 0.05, 0, 1.5));
+    if (it.style === 'area') put(pickF('Surface', it, 'surface', [['', 'Plain colour'], ['lawn', 'Lawn'], ['gravel', 'Gravel'], ['mulch', 'Mulch'], ['soil', 'Bare soil'], ['pavers', 'Pavers'], ['decking', 'Decking']]));
+    if (it.style === 'building') put(numF('Wall height (m)', it, 'wallH', 0.1, 0.5, 12));
+    put(sideRows(it.pts, np => shapeSides(it, np)));
+    put(el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Fence round this shape', onclick: () => fenceRing(it.pts, it.name + ' fence') })]));
+  } else if (k.line) put(el('p', { class: 'small muted', text: 'Length: ' + r2(it.pts.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - it.pts[i - 1][0], p[1] - it.pts[i - 1][1]) : 0), 0)) + ' m. Drag the corner squares to reshape.' }));
   if (it.kind === 'plant') {
     section('Crop and dates');
     put(el('label', { class: 'small pl-field' }, ['Crop', (() => { const sl = el('select', { onchange: e => { const c = M.CROPS[e.target.value]; Object.assign(it, { crop: e.target.value, shape: c[1], spread: c[2], height: c[3] }); commit(); } }, cropOptions()); sl.value = it.crop; return sl; })()]),
       it.link ? el('p', { class: 'small pl-good', text: 'Linked to the app: ' + (((S.places.plants || []).find(p => p.id === it.link) || {}).title || 'a plant record') + '. The plan for the app refers to this record.' }) : null,
       field('Variety', it.variety, v => { it.variety = String(v).slice(0, 60); }, { maxlength: '60' }), lookRow(it),
       el('div', { class: 'pl-row' }, [numF('Spread (m)', it, 'spread', 0.05, 0.02, 40), numF('Height (m)', it, 'height', 0.1, 0.02, 40)]),
+      heightTools(it),
       el('div', { class: 'pl-row' }, [field('Sow / plant', it.sow, v => { it.sow = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' }), field('Harvest', it.harvest, v => { it.harvest = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }, { type: 'date' })]),
       numF('Remind me (days before)', it, 'remind', 1, 0, 60),
       (() => { const cb = el('input', { type: 'checkbox', checked: !!it.save, onchange: e => { if (e.target.checked) it.save = true; else delete it.save; commit(); } }); return el('label', { class: 'small pl-check' }, [cb, ' Saving seed from this plant']); })());

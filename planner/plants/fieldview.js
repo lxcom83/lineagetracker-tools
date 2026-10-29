@@ -46,7 +46,7 @@ export class FieldView {
     const used=new Set(), M=new THREE.Matrix4(), Q=new THREE.Quaternion(), P=new THREE.Vector3(), S=new THREE.Vector3(), Y=new THREE.Vector3(0,1,0);
     for(const g of sel.groups){
       const m=this.mesh(g.species,g.level,g.count); used.add(g.species+':'+g.level);
-      for(let i=0;i<g.count;i++){ const d=g.data; Q.setFromAxisAngle(Y,d[i*5+3]); P.set(d[i*5],d[i*5+1],d[i*5+2]); const sc=d[i*5+4]; S.set(sc,sc,sc); M.compose(P,Q,S); m.setMatrixAt(i,M); }
+      for(let i=0;i<g.count;i++){ const d=g.data; Q.setFromAxisAngle(Y,d[i*6+3]); P.set(d[i*6],d[i*6+1],d[i*6+2]); const sc=d[i*6+4]; S.set(sc,sc*(d[i*6+5]||1),sc); M.compose(P,Q,S); m.setMatrixAt(i,M); }
       m.count=g.count; m.instanceMatrix.needsUpdate=true; }
     for(const [k,m] of this.meshes) if(!used.has(k)) m.count=0;
   }

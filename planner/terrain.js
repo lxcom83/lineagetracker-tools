@@ -287,6 +287,7 @@ export function contours(g, interval = 0.5, opts = {}) {
   for (let level = start; level <= r.max + 1e-9 && count++ < 400; level += interval) {
     const segs = [], L = Math.round(level * 1e6) / 1e6, v = (i, j) => g.z[j * g.nx + i] - L + 1e-9;
     for (let j = 0; j < g.ny - 1; j++) for (let i = 0; i < g.nx - 1; i++) {
+      if (opts.skip && opts.skip[j * (g.nx - 1) + i]) continue;   // cells a retaining wall passes through: the step is drawn by the wall, not as crowded contours
       const a = v(i, j), b = v(i + 1, j), c = v(i + 1, j + 1), d = v(i, j + 1), idx = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
       if (idx === 0 || idx === 15) continue;
       const X = i * g.cell, Y = j * g.cell, s = g.cell, P = { t: [X + s * a / (a - b), Y], r: [X + s, Y + s * b / (b - c)], b: [X + s * d / (d - c), Y + s], l: [X, Y + s * a / (a - d)] };

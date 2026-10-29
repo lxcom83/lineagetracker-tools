@@ -106,7 +106,7 @@ export class PlantField {
   addBlock(b){
     const c = { id:b.id||('b'+this.blocks.length), species:b.species, x:+b.x||0, z:+b.z||0, angle:+b.angle||0,
       rows:Math.max(1,b.rows|0), cols:Math.max(1,b.cols|0), rowSpacing:+b.rowSpacing||1, plantSpacing:+b.plantSpacing||1,
-      jitter:+b.jitter||0, seed:b.seed|0||1, sizeVar:b.sizeVar===undefined?0.1:+b.sizeVar, scale:b.scale>0?+b.scale:1 };
+      jitter:+b.jitter||0, seed:b.seed|0||1, sizeVar:b.sizeVar===undefined?0.1:+b.sizeVar, scale:b.scale>0?+b.scale:1, sy:b.sy>0?Math.min(4,Math.max(0.25,+b.sy)):1 };   // sy stretches the plant upwards only (a taller or shorter line of the same crop)
     this.blocks.push(c); return c;
   }
   count(){ let n=0; for(const b of this.blocks) n+=b.rows*b.cols; return n; }
@@ -131,7 +131,7 @@ export class PlantField {
       const sp = this.species[b.species]; const total=b.rows*b.cols;
       stats.considered += total;
       if(!sp) continue;
-      const baseSize = Math.max(2*sp.r, sp.h), size = baseSize*b.scale;
+      const baseSize = Math.max(2*sp.r, sp.h*b.sy), size = baseSize*b.scale;
       // block outline (world) vs view outline: quick reject
       const bw=(b.cols-1)*b.plantSpacing, bh=(b.rows-1)*b.rowSpacing, a=b.angle*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
       const corners=[[0,0],[bw,0],[bw,bh],[0,bh]].map(([lx,lz])=>[b.x+lx*ca-lz*sa, b.z+lx*sa+lz*ca]), bb=polyBox(corners);
@@ -160,7 +160,7 @@ export class PlantField {
           else if(pl>L){ if(px < T[pl-1]*1.25){ L = pl; stay = true; } }
           else stay = pl<3;
         }
-        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), px, key:stay?k*1.25:k, blk:s===1?b:null, idx:s===1?r*b.cols+c:-1, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
+        cand[L].push({sp:b.species, x:tmp[0], y:this.ground?this.ground(tmp[0],tmp[1]):0, z:tmp[1], rot, sc:vary*(s>1?s:1), sy:b.sy, px, key:stay?k*1.25:k, blk:s===1?b:null, idx:s===1?r*b.cols+c:-1, cover:s>1?Math.min(s,b.rows-r)*Math.min(s,b.cols-c):1});
       };
       const leaf=(rA,rB,cA,cB)=>{      // plants rA..rB, cA..cB inclusive, all about the same distance away
         const mr=(rA+rB)/2, mc=(cA+cB)/2; this.pos(b,mr,mc,tmp);
@@ -213,8 +213,8 @@ export class PlantField {
     const groups=[]; const names=['full','reduced','proxy','marker'];
     for(let L=0;L<4;L++){
       const bySp={}; for(const e of cand[L]) (bySp[e.sp]||(bySp[e.sp]=[])).push(e);
-      for(const sp in bySp){ const arr=bySp[sp], data=new Float32Array(arr.length*5);   // x, height, z, turn, size for each plant
-        arr.forEach((e,i)=>{ data[i*5]=e.x; data[i*5+1]=e.y; data[i*5+2]=e.z; data[i*5+3]=e.rot; data[i*5+4]=e.sc; stats.represented+=e.cover||1; });
+      for(const sp in bySp){ const arr=bySp[sp], data=new Float32Array(arr.length*6);   // x, height, z, turn, size, upward stretch for each plant
+        arr.forEach((e,i)=>{ data[i*6]=e.x; data[i*6+1]=e.y; data[i*6+2]=e.z; data[i*6+3]=e.rot; data[i*6+4]=e.sc; data[i*6+5]=e.sy||1; stats.represented+=e.cover||1; });
         groups.push({species:sp, level:L, count:arr.length, data});
         stats[names[L]]+=arr.length; stats.tris+=arr.length*this.species[sp].tris[L]; }
     }
