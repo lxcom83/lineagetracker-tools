@@ -28,7 +28,7 @@ export function topBar({ tool = '', slot = null, who = null } = {}) {
   const swBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Switch tool' }, [icon('grid')]);
   const sw = el('div', { class: 'kswitch' }, [swBtn]);
   popMenu(swBtn, () => [
-    ...Object.entries(TOOLS).map(([k, t]) => el('a', { href: rootUrl(t.path), role: 'menuitem', class: k === tool ? 'here' : '' }, [icon(k === 'print' ? 'tag' : k === 'catalogue' ? 'list' : 'grid'), el('span', {}, [t.name, el('small', { text: k === 'print' ? 'Label and sticker designer' : 'Garden and farm planner (coming later)' })])])),
+    ...Object.entries(TOOLS).map(([k, t]) => el('a', { href: rootUrl(t.path), role: 'menuitem', class: k === tool ? 'here' : '' }, [icon(k === 'print' ? 'tag' : k === 'catalogue' ? 'list' : k === 'nutrients' ? 'tray' : 'grid'), el('span', {}, [t.name, el('small', { text: k === 'print' ? 'Label and sticker designer' : k === 'catalogue' ? 'Catalogue page maker' : k === 'nutrients' ? 'Reservoir mixing and reading log' : 'Garden, yard and indoor planner' })])])),
     el('div', { class: 'sep' }),
     el('a', { href: CFG.APP, role: 'menuitem', target: '_blank', rel: 'noopener' }, [icon('logo'), el('span', {}, ['Lineage Tracker app', el('small', { text: 'Your records (opens in a new tab)' })])]),
     el('a', { href: CFG.SITE, role: 'menuitem' }, [icon('info'), el('span', { text: 'lineagetracker.org' })]),

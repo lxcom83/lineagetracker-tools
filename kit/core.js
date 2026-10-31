@@ -68,7 +68,17 @@ export function toast(msg, ms = 3200) {
 export function dialog(title, body, { wide = false, onClose } = {}) {
   const back = document.activeElement;
   const close = () => { wrap.remove(); document.removeEventListener('keydown', key, true); if (back && back.focus) back.focus(); onClose && onClose(); };
-  const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+  const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])';
+  const key = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key !== 'Tab') return;
+    // the keyboard stays inside the dialog: Tab used to leave it and walk the page behind
+    const f = [...box.querySelectorAll(FOCUSABLE)].filter(n => n.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1], here = document.activeElement, inside = box.contains(here);
+    if (e.shiftKey && (here === first || !inside)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (here === last || !inside)) { e.preventDefault(); first.focus(); }
+  };
   const head = el('div', { class: 'dlg-head' }, [el('h2', { id: 'dlg-t', text: title }), el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Close', onclick: close }, [icon('x')])]);
   const box = el('div', { class: 'dlg' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-t' }, [head, el('div', { class: 'dlg-body' }, body)]);
   const wrap = el('div', { class: 'dlg-wrap', onmousedown: e => { if (e.target === wrap) close(); } }, [box]);
@@ -114,6 +124,7 @@ const ICONS = {
   alignL: 'M4 6h16M4 10h10M4 14h16M4 18h10', alignC: 'M4 6h16M7 10h10M4 14h16M7 18h10', alignR: 'M4 6h16M10 10h10M4 14h16M10 18h10', tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z',
   hill: 'M2 19l6-9 4 5 3-4 7 8zM15.5 8.5a1.5 1.5 0 100-.01', rows: 'M3 8h18M3 13h18M3 18h18M7 8V5M12 8V5M17 8V5M7 13v-2.5M12 13v-2.5M17 13v-2.5', path: 'M8 21l3-18M16 21l-3-18M12 7v2M12 13v2', fence: 'M5 20V7l1.5-2L8 7v13M16 20V7l1.5-2L19 7v13M3 10h18M3 16h18', drip: 'M3 7h18M7 7v3M12 7v3M17 7v3M7 13.5a1 1 0 100 .01M12 15.5a1 1 0 100 .01M17 13.5a1 1 0 100 .01',
+  plug: 'M8 3v5M16 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3', room: 'M3 3h18v18H3zM3 14h6M9 14a5 5 0 0 1 5 5', shelf: 'M4 3v18M20 3v18M4 7h16M4 12h16M4 17h16', tray: 'M3 8h18v10H3zM9 8v10M15 8v10M3 13h18',
   house: 'M3 11l9-7 9 7M5 9.5V20h14V9.5M10 20v-5h4v5', greenhouse: 'M3 20V10l9-6 9 6v10zM3 10h18M12 4v16M7.5 7v13M16.5 7v13', pergola: 'M3 7h18M3 10h18M5 7v13M19 7v13M8 5v5M12 5v5M16 5v5', trellis: 'M4 20V4M20 20V4M4 4l16 16M20 4L4 20M4 12l8-8 8 8-8 8z', wall: 'M3 20h18M3 20V9h18v11M3 13h18M3 16.5h18M8 9v4M14 9v4M11 13v3.5M17 13v3.5M6 16.5V20M13 16.5V20',
   check: 'M5 12l5 5 9-10', barcode: 'M4 5v14M7 5v14M9 5v14M12 5v14M15 5v14M16.5 5v14M20 5v14', calendar: 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4', hash: 'M5 9h14M5 15h14M10 4L8 20M16 4l-2 16', info: 'M12 22a10 10 0 100-20 10 10 0 000 20zM12 11v6M12 7h.01', back: 'M15 6l-6 6 6 6',
 };
@@ -240,7 +251,7 @@ export function turnstile(box) {
 
 /* ---------- The membership gate ---------- */
 const PASS = t => 'lt_tool_pass_' + t;
-export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, catalogue: { name: 'LT-Catalogue', path: 'catalogue/' }, planner: { name: 'LT-Planner', path: 'planner/' } };
+export const TOOLS = { print: { name: 'LT-Print', path: 'print/' }, catalogue: { name: 'LT-Catalogue', path: 'catalogue/' }, planner: { name: 'LT-Planner', path: 'planner/' }, nutrients: { name: 'LT-Nutrients', path: 'nutrients/' } };
 function clearPasses() { for (const t of Object.keys(TOOLS)) store.del(PASS(t)); }
 export const REASONS = {
   closed: 'This tool is not open to members yet. It will open soon.',
@@ -275,6 +286,17 @@ export async function gate(tool) {
   return { ok: false, reason: r.status === 404 ? 'closed' : 'error' };
 }
 export function signInUrl(next) { return rootUrl('signin.html?next=' + encodeURIComponent(next)); }
+/* Units (metres or feet): the member's choice is kept on their account (member_units_get / member_units_set) with a copy on this device, so every tool agrees. */
+export const UNITS_KEY = 'ltplanner.units';
+export const deviceUnits = () => { try { const v = localStorage.getItem(UNITS_KEY); return v === 'ft' || v === 'm' ? v : ''; } catch { return ''; } };
+export const setDeviceUnits = u => { try { localStorage.setItem(UNITS_KEY, u === 'ft' ? 'ft' : 'm'); } catch { /* ignore */ } };
+/* read the account's choice into the device copy when signed in; resolves to 'm', 'ft' or '' (never chosen). Never throws. */
+export async function syncUnits() {
+  try { if (!getSession()) return deviceUnits(); const r = await rpc('member_units_get'); if (r.ok && (r.body === 'm' || r.body === 'ft')) { setDeviceUnits(r.body); return r.body; } } catch { /* offline: keep the device copy */ }
+  return deviceUnits();
+}
+/* the member chose: keep it here, and on the account when signed in */
+export function saveUnits(u) { setDeviceUnits(u); try { if (getSession()) Promise.resolve(rpc('member_units_set', { p_units: u === 'ft' ? 'ft' : 'm' })).catch(() => {}); } catch { /* ignore */ } }
 export const fmtDay = ms => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 /* Offline: the tools keep working without a connection after the first visit (sw.js). */
 export function registerSW() {

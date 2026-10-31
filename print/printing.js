@@ -96,6 +96,10 @@ ${P().guides ? '.cell .lab{outline:0.2mm solid #bbb;outline-offset:-0.2mm}' : ''
     const numIn = (label, val, fn, { min = 0, max = 100, step = 0.5 } = {}) => { const i = el('input', { type: 'number', min: String(min), max: String(max), step: String(step), value: String(val) }); i.addEventListener('change', () => fn(clampN(i.value, min, max, val))); return el('label', { class: 'fld' }, [el('span', { text: label }), i]); };
     set.append(el('p', { class: 'small muted', text: `${t.name}${t.name.includes(`${t.w} × ${t.h}`) ? '' : `: ${t.w} × ${t.h} mm`}${t.fold.on ? ', fold-over' : ''}.` }));
     set.append(sel('Paper', p.paper, [['a4', 'A4 sheets'], ['letter', 'US Letter sheets'], ['roll', 'One label per page (label printers, or a full-page design)']], v => upd('paper', v)));
+    if (p.paper === 'roll') set.append(el('p', { class: 'notice small' }, [
+      el('b', { text: 'Printing to a label printer? Three settings in the print window:' }),
+      el('span', { text: ' choose the paper size that is your label (' + t.w + ' × ' + cellSize().h + ' mm), not a "fit" or "reduction" size; turn OFF "Headers and footers", or the browser prints the date, the title and the web address on your label; set Margins to None and Scale to 100%. If your label size is not in the list, add it in your printer\'s own settings first, then start the browser again. ' }),
+      el('a', { href: 'trouble.html', target: '_blank', rel: 'noopener', text: 'Printing labels: what to check \u2192' })]));
     if (p.paper !== 'roll') {
       const opts = [['auto', 'As many as fit'], ['custom', 'My own sheet (from the box it came in)']];
       if (p.paper === 'a4') for (const [k, s] of Object.entries(SHEETS)) opts.push([k, s.name + (Math.abs(s.w - t.w) < 0.6 && Math.abs(s.h - cellSize().h) < 0.6 ? '  ✓ matches' : '')]);
@@ -194,7 +198,7 @@ ${P().guides ? '.cell .lab{outline:0.2mm solid #bbb;outline-offset:-0.2mm}' : ''
     const g = grid(), j = jobs();
     if (g.tooBig) { toast('The labels do not fit on the paper'); return; }
     // the print page (sheet.html) picks this up from window.opener, so nothing leaves the device
-    window.__ltPrintJob = { title: S.t.name, css: `@page{size:${g.css};margin:0}\n${PAGE_CSS()}\n.pg{page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto;break-after:auto}\n@media screen{body{background:#e8e8e8}.pg{margin:10px auto;box-shadow:0 1px 6px rgba(0,0,0,.2)}}`, html: pagesHTML(j.list, g).html };
+    window.__ltPrintJob = { title: S.t.name, page: g.roll ? `${g.cw} × ${g.ch} mm` : (PAPER[P().paper] || PAPER.a4).name, roll: !!g.roll, css: `@page{size:${g.css};margin:0}\n${PAGE_CSS()}\n.pg{page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto;break-after:auto}\n@media screen{body{background:#e8e8e8}.pg{margin:10px auto;box-shadow:0 1px 6px rgba(0,0,0,.2)}}`, html: pagesHTML(j.list, g).html };
     const w = window.open(new URL('sheet.html', import.meta.url).href, '_blank');
     if (!w) { window.__ltPrintJob = null; toast('The print window was blocked. Allow pop-ups for this site and try again'); }
   }

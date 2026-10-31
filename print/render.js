@@ -74,12 +74,12 @@ export function fitText(root) {
   for (const tx of root.querySelectorAll('.tx[data-fit]')) {
     const mode = tx.dataset.fit, base = +tx.dataset.size || 9, span = tx.firstElementChild;
     if (!span || mode === 'clip') continue;
-    tx.style.fontSize = base + 'pt';
+    tx.style.fontSize = base + 'pt'; delete tx.dataset.cut;
     const over = () => span.scrollWidth > tx.clientWidth + 0.5 || tx.scrollHeight > tx.clientHeight + 0.5;
     if (!over()) continue;
     let lo = Math.max(4, base * 0.5), hi = base;
     tx.style.fontSize = lo + 'pt';
-    if (over()) continue;   // even the smallest size does not fit; keep it small and let it cut off
+    if (over()) { tx.dataset.cut = '1'; continue; }   // even the smallest size does not fit: it is cut off, and the editor says so
     for (let i = 0; i < 8; i++) { const mid = (lo + hi) / 2; tx.style.fontSize = mid + 'pt'; if (over()) hi = mid; else lo = mid; }
     tx.style.fontSize = lo + 'pt';
   }

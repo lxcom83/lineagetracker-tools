@@ -71,7 +71,8 @@ export function makeFinished(site, plan) {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = key(i, j) * 1000003 + ent; if (seen.has(k)) continue; seen.add(k); if (++entries > CAP) { limited = true; return; } const kk = key(i, j); let l = bk.get(kk); if (!l) { l = []; bk.set(kk, l); } l.push(ent); }
     }
   });
-  let work = 0, volLimited = false; const BUDGET = 2e7;   // segment checks allowed while building the finished grid or volumes
+  let work = 0, volLimited = false; const BUDGET = 2e7;   // segment checks allowed while building the finished grid
+  const VOL_BUDGET = 6e6;   // the soil estimate gets a tighter one: at the wall cap the old figure blocked the panel for six seconds
 
   /* the nearest wall to (x, y) that reaches it: { w, d (signed, + on the high side), dist, sp (distance along the wall), beyond (metres past an end) } */
   function nearest(x, y) {
@@ -139,7 +140,7 @@ export function makeFinished(site, plan) {
       let step = Math.max(0.1, Math.min(0.25, (natGrid ? natGrid.cell : 0.5) / 2));
       let est = 0; for (const q of piecesOf(w)) est += Math.max(0, (Math.min(q[2], site.w) - Math.max(q[0], 0)) * (Math.min(q[3], site.h) - Math.max(q[1], 0))); if (est / (step * step) > 400000) step = Math.sqrt(est / 400000);   // long walls: coarser sampling, never an unbounded scan
       const a = step * step; let c = 0, f = 0;
-      forBand(w, step, (i, j) => { if (work > BUDGET * 2) { volLimited = true; return; } const x = i * step, y = j * step; if (inside && !inside(x, y)) return; const nr = nearest(x, y); if (!nr || nr.w !== w) return; const d = effect(nr, natural(x, y)); if (d > 0) f += d * a; else c -= d * a; }, new Set());
+      forBand(w, step, (i, j) => { if (work > VOL_BUDGET) { volLimited = true; return; } const x = i * step, y = j * step; if (inside && !inside(x, y)) return; const nr = nearest(x, y); if (!nr || nr.w !== w) return; const d = effect(nr, natural(x, y)); if (d > 0) f += d * a; else c -= d * a; }, new Set());
       let fmin = Infinity, fmax = 0, area = 0;
       for (const s of w.segs) { const k = Math.max(1, Math.min(2000, Math.ceil(s.L / 0.25))); for (let i = 0; i < k; i++) { const t = (i + 0.5) / k, x = s.a[0] + s.dx * t, y = s.a[1] + s.dy * t, z = natural(x, y), face = Math.max(z, w.top) - Math.min(z, w.base); if (face < fmin) fmin = face; if (face > fmax) fmax = face; area += face * s.L / k; } }
       per.push({ id: w.id, cut: c, fill: f, faceMin: fmin === Infinity ? w.height : fmin, faceMax: Math.max(fmax, w.height), faceArea: area, length: w.length, top: w.top, base: w.base }); cut += c; fill += f;

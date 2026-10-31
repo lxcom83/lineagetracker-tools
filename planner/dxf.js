@@ -86,8 +86,13 @@ function dp(pts, eps) {   // Douglas-Peucker on a closed ring (split at the two 
   return out;
 }
 export function simplify(pts, maxPts = 100, scale = 1) {   // fewer corners, tolerance growing until it fits; never fewer than 3
-  let eps = 0.002 * scale, out = pts.slice();
-  for (let n = 0; out.length > maxPts && n < 40; n++) { const c = dp(pts, eps); if (c.length < 3) break; out = c; eps *= 1.6; }
+  // One polyline may carry any number of vertices, and the tolerance search runs the whole ring each round.
+  // The answer is at most maxPts corners, so a very long ring is thinned to a working length first.
+  const WORK = 1000;
+  let src = pts;
+  if (src.length > WORK) { const step = src.length / WORK; src = Array.from({ length: WORK }, (_, i) => pts[Math.floor(i * step)]); }
+  let eps = 0.002 * scale, out = src.slice();
+  for (let n = 0; out.length > maxPts && n < 40; n++) { const c = dp(src, eps); if (c.length < 3) break; out = c; eps *= 1.6; }
   if (out.length > maxPts) { const step = out.length / maxPts; out = Array.from({ length: maxPts }, (_, i) => out[Math.floor(i * step)]); }
   return out;
 }

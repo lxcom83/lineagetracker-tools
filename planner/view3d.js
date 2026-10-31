@@ -13,12 +13,27 @@
 import { el, icon } from '../kit/core.js';
 import { openShare } from './share.js';
 import * as OL from './outline.js';
+import * as IND from './indoor.js';   // rooms, shelves and trays
 import * as EW from './earthworks.js';   // imported directly, like outline.js, so a view opened after an update never meets old code   // imported directly (not through model.js) so a view opened after an update never meets old code
 
 export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '', grown = false, years = 0 }) {
   const planIn = plan;
   if (grown) {   // every planting drawn at full size: take away the sowing and harvest dates (no date means fully grown)
-    plan = JSON.parse(JSON.stringify(planIn)); const strip = L => (L || []).forEach(it => { if (it && (it.kind === 'plant' || it.kind === 'rows')) { if (M.growth(it, date) === null) it.off = true; else { delete it.sow; delete it.harvest; } } });   // what is in the ground on the plan date is shown fully grown; crops already finished or not yet sown stay out, so they do not stack on top of each other
+    plan = JSON.parse(JSON.stringify(planIn));
+    const strip = L => (L || []).forEach(it => {
+      if (!it) return;
+      if (it.kind === 'plant' || it.kind === 'rows') { if (M.growth(it, date) === null) it.off = true; else { delete it.sow; delete it.harvest; } return; }
+      // a tray or a hydro system grows from its own sowing date, so "fully grown" moves that date back far
+      // enough for the batch to be at its ready point.  Before this the tick did nothing to them at all.
+      if ((it.kind === 'tray' || it.kind === 'hydro') && it.crop && it.sow) {
+        const cy = IND.cycleOf(it.crop); if (!cy) return;
+        const st = IND.status(it, date);
+        if (st === 'empty' || st === 'cleared' || st === 'done') { it.off = true; return; }
+        const tl = IND.timeline(cy, it.sow, it.actual, it.reset);
+        const span = Math.max(1, IND.daysBetween(it.sow, tl.readyExp));
+        it.sow = IND.addDays(date, -span); delete it.actual; delete it.cleared;
+      }
+    });   // what is in the ground on the plan date is shown fully grown; crops already finished or not yet sown stay out, so they do not stack on top of each other
     strip(plan.items); for (const b of Object.values(plan.blocks || {})) strip(b.items);
     if (years > 0) {   // trees and the like are young: about 8 years to full size, starting at a fifth of it
       const f = Math.min(1, 0.2 + 0.8 * years / 8), young = L => (L || []).forEach(it => { const c = it && it.kind === 'plant' && M.CROPS[it.crop]; if (c && c[1] === 'tree') { it.spread = Math.max(0.3, (it.spread || c[2]) * f); it.height = Math.max(0.3, (it.height || c[3]) * f); } });
@@ -244,6 +259,100 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     { const [x, z] = L(0, 0); box(along ? 2 * a : bar * 1.5, bar * 1.5, along ? bar * 1.5 : 2 * a, fc, x, top + rise - 0.03, z, ry); }
     it.__lab = top + rise + 0.4; it.__top = base;   // plants and benches inside stand on the floor
   }
+  /* ---- indoor growing: a room or tent (walls drawn see-through so you can look in), shelves with tiers, trays with a canopy that grows with the batch ---- */
+  const seeThrough = new Map();
+  const ghostMat = c => { let m = seeThrough.get(c); if (!m) { m = new THREE.MeshStandardMaterial({ color: c, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9 }); seeThrough.set(c, m); mats.set('#ghost' + c, m); } return m; };
+  /* wall pieces of a room in its own frame: [u0, v0, u1, v1] for each side, with the door gap left out; also gives the door gap for the lintel */
+  function roomWalls(it, gap = 0) {   // gap: widen the door gap for the walker, whose body is wider than a point
+    const t = it.style === 'tent' ? 0.03 : 0.1, hw = it.w / 2, hh = it.h / 2, out = [];
+    const side = (name, len, mk) => {
+      if (it.noDoor || it.door.side !== name) { out.push(mk(-len / 2, len / 2)); return; }
+      const dw = Math.min(it.door.w, len - 2 * t), c = -len / 2 + t + dw / 2 + it.door.pos * Math.max(0, len - 2 * t - dw), a = c - dw / 2, b = c + dw / 2;
+      if (a - gap > -len / 2 + 1e-3) out.push(mk(-len / 2, a - gap)); if (b + gap < len / 2 - 1e-3) out.push(mk(b + gap, len / 2)); out.door = { name, a, b, mk };
+    };
+    const res = []; let door = null; const keep = o => { if (o.door) door = o.door; };
+    side('n', it.w, (a, b) => [a, -hh, b, -hh]); keep(out); side('s', it.w, (a, b) => [a, hh, b, hh]); keep(out); side('w', it.h, (a, b) => [-hw, a, -hw, b]); keep(out); side('e', it.h, (a, b) => [hw, a, hw, b]); keep(out);
+    return { segs: out, door, t };
+  }
+  function room(it) {
+    const ry = -(it.rot || 0) * D2R, u = under(it), floor = u.hi + 0.03, low = u.lo - 0.1, H = it.ceilH, W = roomWalls(it), t = W.t, tent = it.style === 'tent';
+    if (floor - low > 0.06) box(it.w + 0.04, floor - low - 0.03, it.h + 0.04, '#9c968c', it.x, low, it.y, ry);
+    { const m = box(it.w, 0.03, it.h, it.floorColour, it.x, floor - 0.03, it.y, ry); m.userData.struct = it.id; }
+    const wc = tent ? '#3a4046' : it.wallColour; it.__lab = floor + H + 0.25;
+    for (const [u0, v0, u1, v1] of W.segs) {
+      const len = Math.hypot(u1 - u0, v1 - v0); if (len < 0.02) continue; const horiz = v0 === v1, [x, z] = local(it, (u0 + u1) / 2, (v0 + v1) / 2);
+      const wall = box(horiz ? len : t, H, horiz ? t : len, wc, x, floor, z, ry); wall.material = ghostMat(wc); wall.renderOrder = 2;
+      const foot = box(horiz ? len : t + 0.002, 0.12, horiz ? t + 0.002 : len, tent ? '#22262a' : '#bdb7aa', x, floor, z, ry);   // a solid skirting so the walls read even when see-through
+    }
+    if (W.door) {   // the door: a gap you can walk through, a lintel over it, and a leaf standing open for a room
+      const d = W.door, dh = Math.min(tent ? 1.5 : 2.0, H - 0.1), [u0, v0, u1, v1] = d.mk(d.a, d.b), horiz = v0 === v1, len = Math.hypot(u1 - u0, v1 - v0), [x, z] = local(it, (u0 + u1) / 2, (v0 + v1) / 2);
+      if (H - dh > 0.02) { const l = box(horiz ? len : t, H - dh, horiz ? t : len, wc, x, floor + dh, z, ry); l.material = ghostMat(wc); l.renderOrder = 2; }
+    }
+  }
+  const SHELF_METAL = '#a9b1b9', BOARD = '#c9ced4';
+  function shelf(it) {
+    const ry = -(it.rot || 0) * D2R, u = under(it), floor = u.hi + 0.03, post = 0.035, n = it.tiers, top = floor + it.base + (n - 1) * it.tierGap + it.tierT + 0.12;
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const [x, z] = local(it, a * (it.w / 2 - post / 2), b * (it.h / 2 - post / 2)); const m = box(post, top - floor, post, SHELF_METAL, x, floor, z, ry); m.userData.struct = it.id; }
+    it.__lab = top + 0.15;
+    for (let k = 0; k < n; k++) { const y = floor + it.base + k * it.tierGap; const m = box(it.w, it.tierT, it.h, BOARD, it.x, y, it.y, ry); m.userData.struct = it.id; it.__tier = it.__tier || []; it.__tier[k] = y + it.tierT; }
+  }
+  const TRAY_BODY = '#2a2e32', MEDIA = '#4b3a2c';
+  function tray(it, shelfOf) {
+    const ry = -(it.rot || 0) * D2R, sh = it.shelf && shelfOf.get(it.shelf), cy = IND.cycleOf(it.crop);
+    let y = sh && sh.__tier ? sh.__tier[Math.min(sh.tiers, it.tier || 1) - 1] : under(it).hi + 0.03;
+    if (y == null) y = under(it).hi + 0.03;
+    const pr = IND.TRAY_PRESETS[it.kind2], hgt = it.kind2 === 'pot4' ? 0.09 : it.kind2 === 'prop' ? 0.05 : 0.055;
+    const body = box(it.w, hgt, it.h, TRAY_BODY, it.x, y, it.y, ry); body.userData.struct = it.id;
+    box(it.w - 0.016, 0.006, it.h - 0.016, MEDIA, it.x, y + hgt - 0.004, it.y, ry);
+    const st = IND.status(it, date);
+    if (cy && (st === 'growing' || st === 'ready' || st === 'late')) {   // the canopy rises from sowing to the expected ready date
+      const tl = IND.timeline(cy, it.sow, it.actual, it.reset), total = Math.max(1, IND.daysBetween(it.sow, tl.readyExp)), done = Math.max(0, IND.daysBetween(it.sow, date)), f = Math.min(1, done / total), maxH = cy.group === 'Seedlings' ? 0.16 : 0.09;
+      const stage0 = tl.stages[0], dark = cy.light === 'after' && date < stage0.endExp && !stage0.actual;
+      const ch = Math.max(0.01, maxH * (dark ? 0.4 * f : f));
+      box(it.w - 0.03, ch, it.h - 0.03, dark ? '#d9cf8a' : st === 'late' ? '#9bb84a' : cy.group === 'Seedlings' ? '#5aa14a' : '#6dbb54', it.x, y + hgt, it.y, ry);
+    }
+  }
+  const GEAR3 = { Lights: '#fff4c2', Heat: '#e8875a', Air: '#8fb8cc', Humidity: '#95b0dd', Control: '#b9b0d6', Water: '#7fb3cf', Covers: '#cfc9b5' };
+  /* a reservoir and the pump beside it were both the Water colour and neither was named, so one tub of water
+     looked exactly like the next: the tank is darker, the pump is darker still */
+  const GEAR3_ITEM = { reservoir50: '#4e86a6', reservoir100: '#3f7693', bucket: '#5d93b0', water_pump: '#2f5c73', air_pump: '#6f9fb5' };
+  function gear(it, shelfOf) {
+    const ry = -(it.rot || 0) * D2R, e = IND.EQUIP[it.item] || IND.EQUIP.led_bar, sh = it.shelf && shelfOf.get(it.shelf), tierTop = sh && sh.__tier ? sh.__tier[Math.min(sh.tiers, it.tier || 1) - 1] : null;
+    const base = tierTop != null && e.mount !== 'floor' ? tierTop : under(it).hi + 0.03;
+    let y = base;
+    if (e.mount === 'above') y = base + 0.055 + it.above;   // above the tray on its tier
+    else if (e.group === 'Covers' || e.name.includes('dome')) y = base + 0.055;   // domes and covers sit on top of a tray
+    const m = box(it.w, Math.max(0.01, e.hgt), it.h, GEAR3_ITEM[it.item] || GEAR3[e.group] || '#ccc', it.x, y, it.y, ry); m.userData.struct = it.id;
+    if (e.group === 'Lights') { const g = box(it.w * 0.9, 0.004, it.h * 0.7, '#ffffff', it.x, y - 0.002, it.y, ry); g.material = flat('#fffbe0'); }
+  }
+  /* a hydro system: a table or tub at working height, water showing, a canopy that grows with the batch */
+  const LINK3 = { water: '#2a7fbf', air: '#8b9298', power: '#e08a1e', control: '#7b4bb0' };
+  function hydro(it) {
+    const ry = -(it.rot || 0) * D2R, base = under(it).hi, T = it.type, cy = IND.cycleOf(it.crop), st = IND.status(it, date), table = T === 'nft' || T === 'ebb', lift = table ? 0.8 : 0.3;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const [x, z] = local(it, sx * (it.w / 2 - 0.03), sz * (it.h / 2 - 0.03)); box(0.04, lift, 0.04, '#59636e', x, base, z, ry); }
+    const y = base + lift;
+    let canopyY = y + 0.12, slabs = [];
+    if (T === 'nft') {
+      const pitch = it.h / Math.max(1, it.channels), wd = Math.max(0.005, Math.min(0.1, pitch * 0.55));
+      for (let c = 0; c < it.channels; c++) { const [x, z] = local(it, 0, -it.h / 2 + pitch * (c + 0.5)); box(it.w, 0.05, wd, '#cfd8dc', x, y, z, ry); box(Math.max(0.005, it.w - 0.02), 0.004, Math.max(0.002, wd - 0.02), '#6fb3d9', x, y + 0.046, z, ry); slabs.push([x, z, Math.max(0.005, it.w - 0.06), wd * 0.9]); }
+      canopyY = y + 0.05;
+    } else if (T === 'ebb') {
+      box(it.w, 0.1, it.h, '#cfd8dc', it.x, y, it.y, ry); box(Math.max(0.005, it.w - 0.04), 0.004, Math.max(0.005, it.h - 0.04), '#6fb3d9', it.x, y + 0.07, it.y, ry); slabs.push([it.x, it.y, Math.max(0.005, it.w - 0.1), Math.max(0.005, it.h - 0.1)]); canopyY = y + 0.1;
+    } else {
+      box(it.w, 0.25, it.h, '#dfe6ea', it.x, y, it.y, ry); box(Math.max(0.005, it.w - 0.04), 0.004, Math.max(0.005, it.h - 0.04), '#7fc0e0', it.x, y + 0.2, it.y, ry);
+      if (T === 'dwc') box(Math.max(0.005, it.w - 0.01), 0.025, Math.max(0.005, it.h - 0.01), '#f2f2f2', it.x, y + 0.25, it.y, ry);
+      slabs.push([it.x, it.y, Math.max(0.005, it.w - 0.1), Math.max(0.005, it.h - 0.1)]); canopyY = y + (T === 'dwc' ? 0.275 : 0.25);
+    }
+    if (cy && (st === 'growing' || st === 'ready' || st === 'late')) {
+      const tl = IND.timeline(cy, it.sow, it.actual, it.reset), total = Math.max(1, IND.daysBetween(it.sow, tl.readyExp)), done = Math.max(0, IND.daysBetween(it.sow, date)), f = Math.min(1, done / total), ch = Math.max(0.01, 0.22 * f);
+      for (const [x, z, w, d] of slabs) box(Math.max(0.02, w), ch, Math.max(0.02, d), st === 'late' ? '#9bb84a' : '#5aa14a', x, canopyY, z, ry);
+    }
+    it.__lab = canopyY + 0.45;
+  }
+  function link3(c) {
+    const [a, b] = c.pts, m = c.medium, lift = m === 'power' ? 0.15 : m === 'control' ? 0.2 : m === 'air' ? 0.25 : 0.3;
+    seg(a, b, m === 'water' ? 0.03 : 0.02, m === 'water' ? 0.03 : 0.02, LINK3[m] || '#2a7fbf', lift);
+  }
   function pergola(it) {
     const ry = -(it.rot || 0) * D2R, u = under(it), Ht = it.height, top = u.hi + Ht, c = it.colour, post = 0.1;
     const along = it.w >= it.h, a = (along ? it.w : it.h) / 2, b = (along ? it.h : it.w) / 2, L = (uu, vv) => (along ? local(it, uu, vv) : local(it, vv, uu));
@@ -362,6 +471,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     }
   }
   let areaN = 0;
+  const shelfOf = new Map(all.filter(i => i.kind === 'shelf').map(i => [i.id, i]));
+  for (const it of shelfOf.values()) shelf(it);   // shelves first: trays stand on their boards
   for (const it of all) {
     if (it.kind === 'shape') shape3D(it);
     else if (it.kind === 'bed') bed(it);
@@ -383,6 +494,12 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     else if (it.kind === 'wall') wall(it);
     else if (it.kind === 'building') building(it);
     else if (it.kind === 'greenhouse') greenhouse(it);
+    else if (it.kind === 'room') room(it);
+    else if (it.kind === 'shelf') { /* built above */ }
+    else if (it.kind === 'tray') tray(it, shelfOf);
+    else if (it.kind === 'gear') gear(it, shelfOf);
+    else if (it.kind === 'hydro') hydro(it);
+    else if (it.kind === 'conn') link3(it);
     else if (it.kind === 'pergola') pergola(it);
   }
   /* Fences, posts, wires, trellis and walls are thousands of little boxes. Drawing each one on its own is what made big plans hot (7,000+ draw calls on the farm),
@@ -418,7 +535,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   };
   const mergedMeshes = mergeStatic(solids);
   groundMesh.receiveShadow = true; solids.traverse(o => { if (o.isMesh) { o.castShadow = !o.userData.glass; o.receiveShadow = !o.userData.glass; } });
-  const setShadows = q => { const on = shadowsFor(q); if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; r.shadowMap.type = THREE.PCFSoftShadowMap; mats.forEach(m => { m.needsUpdate = true; }); surfMats.forEach(m => { m.needsUpdate = true; }); mat.needsUpdate = true; groundMesh.material.needsUpdate = true; } sun.castShadow = on; return on; };
+  const setShadows = q => { const on = shadowsFor(q); if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; if (THREE.PCFSoftShadowMap !== undefined) r.shadowMap.type = THREE.PCFSoftShadowMap; /* the bundled three.js may not have it; setting undefined logs a warning */ mats.forEach(m => { m.needsUpdate = true; }); surfMats.forEach(m => { m.needsUpdate = true; }); mat.needsUpdate = true; groundMesh.material.needsUpdate = true; } sun.castShadow = on; return on; };
   // plants that stand inside a raised bed sit on its soil, not on the ground under it
   const beds = all.filter(it => (it.kind === 'bed' || it.kind === 'greenhouse' || it.kind === 'shape') && it.__top !== undefined);
   const inBed = (x, z) => { for (const b of beds) { if (b.pts) { if (pip3(x, z, b.pts)) return b.__top; continue; } const a = -(b.rot || 0) * D2R, dx = x - b.x, dz = z - b.y, u = dx * Math.cos(a) - dz * Math.sin(a), v = dx * Math.sin(a) + dz * Math.cos(a); if (b.shape === 'round' ? (u / (b.w / 2)) ** 2 + (v / (b.h / 2)) ** 2 <= 1 : Math.abs(u) <= b.w / 2 && Math.abs(v) <= b.h / 2) return b.__top; } return null; };
@@ -453,7 +570,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   let glowSet = new Set(glow || []);
   const labels = [];
   const lookName = it => (plan.varieties && it.look && plan.varieties[it.look] ? plan.varieties[it.look].name : '');
-  const findText = it => [it.name, it.kind === 'plant' || it.kind === 'rows' ? ((M.CROPS[it.crop] || [])[0] || '') : '', it.variety, lookName(it)].join(' ').toLowerCase();
+  const findText = it => [it.name, it.kind === 'plant' || it.kind === 'rows' ? ((M.CROPS[it.crop] || [])[0] || '') : it.kind === 'tray' || it.kind === 'hydro' ? ((IND.cycleOf(it.crop) || {}).name || '') : '', it.variety, lookName(it)].join(' ').toLowerCase();
   const matches = q => { const ws = String(q || '').trim().toLowerCase().split(/\s+/).filter(Boolean); return ws.length ? all.filter(it => ws.every(w => findText(it).includes(w))).map(it => it.id) : []; };
   /* what is growing in beds, greenhouses and benches (second line of the label, switched on in the side panel) */
   const contents = it => { if (!['bed', 'greenhouse', 'bench'].includes(it.kind)) return null; const g = M.growingIn(all, it, date); if (!g.length) return null;
@@ -462,8 +579,12 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   { const named = it => (it.name || '').trim(), mid = pts => { const i = Math.floor((pts.length - 1) / 2), a = pts[i], b = pts[i + 1] || a; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
     for (const it of all) {
       let text = named(it), x, z, y, kind = it.kind, minor = false;
-      if (it.kind === 'note') text = (it.text || '').slice(0, 60) || text;
+      if (it.kind === 'note') { const t = (it.text || '').trim(); text = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') + '…' : t) || text; }   // cut at a word, not mid-sentence
       if (it.kind === 'plant') { if (drawnH[it.id] === undefined) continue; minor = !(it.spread >= 1.2 || (it.variety && it.spread >= 0.6)); text = text + (it.variety ? ' ' + it.variety : ''); }   // not in the ground on this date: no label; small plants are named only when found
+      if (it.kind === 'conn') continue;
+      // floor equipment that a member needs to tell apart gets a small label; everything else stays unlabelled
+      if (it.kind === 'gear') { const ge = IND.EQUIP[it.item]; if (it.shelf || !ge || !(ge.litres || it.item === 'water_pump' || it.item === 'air_pump')) continue; minor = true; }
+      if (it.kind === 'tray') { const c = IND.cycleOf(it.crop); if (!c) continue; text = c.name; minor = true; }   // a tray is labelled by its crop, and only when it has one
       if (!text) continue;
       if (it.pts) { [x, z] = mid(it.pts); y = gy(x, z) + (['fence', 'trellis', 'wall'].includes(it.kind) ? (it.height || 1.2) + 0.25 : 0.3); }
       else if (it.__lab !== undefined) { x = it.x; z = it.y; y = it.__lab; }
@@ -612,7 +733,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     const o = walk ? new THREE.Vector3(-Math.sin(walk.yaw * D2R) * Math.cos(walk.pitch * D2R), Math.sin(walk.pitch * D2R), Math.cos(walk.yaw * D2R) * Math.cos(walk.pitch * D2R)) : offset(); cubeCam.position.set(o.x * 3, o.y * 3, o.z * 3); cubeCam.up.copy(cam.up); cubeCam.lookAt(0, 0, 0); cubeCam.updateMatrixWorld();
     const R = cubeRect(); r.setScissorTest(true); r.setScissor(R.x, h - R.y - R.s, R.s, R.s); r.setViewport(R.x, h - R.y - R.s, R.s, R.s); r.clearDepth(); r.render(cubeScene, cubeCam); r.setScissorTest(false);
     if (showLabels) { const cp = cam.position; labels.sort((a, b) => ((a.x - cp.x) ** 2 + (a.y - cp.y) ** 2 + (a.z - cp.z) ** 2) - ((b.x - cp.x) ** 2 + (b.y - cp.y) ** 2 + (b.z - cp.z) ** 2)); placeLabels(w, h); }
-    const t = sel.stats; info.textContent = field.count().toLocaleString() + ' plants · drawn ' + t.drawn.toLocaleString() + ' (' + t.full + ' full, ' + t.reduced + ' reduced, ' + t.proxy + ' simple, ' + t.marker + ' flat) · ' + Math.round(t.tris).toLocaleString() + ' triangles';
+    // An indoor plan has no field plants at all, and read "0 plants · drawn 0 · 0 triangles", which looks broken.
+    // It counts its trays and systems instead.
+    const t = sel.stats, nPlants = field.count();
+    if (nPlants > 0) info.textContent = nPlants.toLocaleString() + ' plants · drawn ' + t.drawn.toLocaleString() + ' (' + t.full + ' full, ' + t.reduced + ' reduced, ' + t.proxy + ' simple, ' + t.marker + ' flat) · ' + Math.round(t.tris).toLocaleString() + ' triangles';
+    else { const nTray = all.filter(i => i.kind === 'tray' && !i.off).length, nSys = all.filter(i => i.kind === 'hydro' && !i.off).length, bits = [];
+      if (nTray) bits.push(nTray.toLocaleString() + (nTray === 1 ? ' tray' : ' trays'));
+      if (nSys) bits.push(nSys.toLocaleString() + (nSys === 1 ? ' hydro system' : ' hydro systems'));
+      info.textContent = (bits.length ? bits.join(' · ') : 'nothing planted yet') + ' · ' + sceneObjs.toLocaleString() + ' parts drawn'; }
     window.__v3scene = scene; window.__v3 = { merged: mergedMeshes, calls: drawCalls, objs: sceneObjs, glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
       beds: beds.map(b => ({ id: b.id, top: b.__top })), under: (x, z) => gy(x, z), plantY, view: k => ({ home, fit, top: topView })[k](), look: o => flyTo(o, 1), dir: (x, y, z) => goToCubeDir(new THREE.Vector3(x, y, z)) };
     if (anim) schedule();
@@ -682,14 +810,31 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       else if (it.kind === 'shape' && it.style === 'pond' ) polys.push(it.pts);
       else if (it.kind === 'tank') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [it.x + a * it.w / 2, it.y + b * it.w / 2]));
       else if (it.kind === 'fence' || it.kind === 'wall' || it.kind === 'trellis') lines.push(it.pts);
+      else if (it.kind === 'hydro') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));
+      else if (it.kind === 'shelf') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));
+      else if (it.kind === 'gear' && !it.shelf && it.w >= 0.25 && it.h >= 0.25) polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));   // a reservoir or pump on the floor is something you walk round
+      else if (it.kind === 'room') for (const [u0, v0, u1, v1] of roomWalls(it, 0.2).segs) lines.push([local(it, u0, v0), local(it, u1, v1)]);   // the walls block you, the door gap lets you through
     }
     return { polys, lines }; };
   const blockedAt = (x, z) => { if (!blockers) blockers = buildBlockers(); for (const q of blockers.polys) if (inPoly(x, z, q) || q.some((a, i) => segD(x, z, a, q[(i + 1) % q.length]) < WR)) return true; for (const l of blockers.lines) for (let i = 1; i < l.length; i++) if (segD(x, z, l[i - 1], l[i]) < WR * 0.8) return true; return false; };
-  const walkGo = (fwd, side) => { if (!walk) return; const wy = walk.yaw * D2R, fx = Math.sin(wy), fz = -Math.cos(wy); { const nx = clamp(walk.x + fx * fwd + -fz * side, 0.5, site.w - 0.5), nz = clamp(walk.z + fz * fwd + fx * side, 0.5, site.h - 0.5), wr = OL.regionOf(site);
-    const free = (x, z) => (wr.rect || OL.inside(wr, x, z)) && (!enforce || !blockedAt(x, z));
+  const walkGo = (fwd, side) => {
+    if (!walk) return;
+    const wy = walk.yaw * D2R, fx = Math.sin(wy), fz = -Math.cos(wy);
+    const dx = fx * fwd + -fz * side, dz = fz * fwd + fx * side, wr = OL.regionOf(site);
     const enforce = !blockedAt(walk.x, walk.z);   // already inside something (a plan edited while standing there): let the walker step out
-    if (free(nx, nz)) { walk.x = nx; walk.z = nz; } else if (free(nx, walk.z)) walk.x = nx; else if (free(walk.x, nz)) walk.z = nz; }   // with an outline you cannot walk out of it
-  st.tx = walk.x; st.tz = walk.z; schedule(); };
+    const free = (x, z) => (wr.rect || OL.inside(wr, x, z)) && (!enforce || !blockedAt(x, z));
+    // Taken in short hops rather than one jump.  Running on a slow frame moved more than a metre at once, and
+    // only the far end was tested, so the walker went straight through the wall in between.
+    const steps = Math.max(1, Math.min(32, Math.ceil(Math.hypot(dx, dz) / 0.1)));
+    for (let k = 0; k < steps; k++) {
+      const nx = clamp(walk.x + dx / steps, 0.5, site.w - 0.5), nz = clamp(walk.z + dz / steps, 0.5, site.h - 0.5);
+      if (free(nx, nz)) { walk.x = nx; walk.z = nz; }
+      else if (free(nx, walk.z)) walk.x = nx;
+      else if (free(walk.x, nz)) walk.z = nz;
+      else break;   // with an outline you cannot walk out of it
+    }
+    st.tx = walk.x; st.tz = walk.z; schedule();
+  };
   function walkStep() {
     const now = performance.now(), dt = Math.min(0.25, (now - walk.t) / 1000); walk.t = now;
     let f = (wkeys.has('w') || wkeys.has('arrowup') ? 1 : 0) - (wkeys.has('s') || wkeys.has('arrowdown') ? 1 : 0) + -wpad.y, sd = (wkeys.has('d') ? 1 : 0) - (wkeys.has('a') ? 1 : 0) + wpad.x, tr = (wkeys.has('arrowleft') || wkeys.has('q') ? 1 : 0) - (wkeys.has('arrowright') || wkeys.has('e') ? 1 : 0);

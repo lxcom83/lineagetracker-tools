@@ -142,6 +142,7 @@ export const ZONES = {
     ['nl-inland', 'Inland', [5, 5], 170, { late: 2 }],
   ],
 };
+Object.setPrototypeOf(ZONES, null);   // a country code of 'constructor' or '__proto__' must not find a function here
 /* every country lists its states or regions first, then the broader climate bands as a fallback */
 for (const cc of Object.keys(ZONES)) ZONES[cc] = [...(REGIONS[cc] || []), ...ZONES[cc].map(([c, l, lsf, free, o]) => [c, l, lsf, free, { ...(o || {}), group: 'By climate band' }])];
 export const NAMES = { US: 'United States', CA: 'Canada', GB: 'United Kingdom', IE: 'Ireland', NZ: 'New Zealand', DE: 'Germany', FR: 'France', NL: 'Netherlands', ES: 'Spain', ZA: 'South Africa' };

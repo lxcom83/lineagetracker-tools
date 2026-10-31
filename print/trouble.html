@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Printing labels: what to check · LT-Print</title>
+<meta name="description" content="Why a label prints across two stickers, and the browser and printer settings to check before a label print. Part of LT-Print.">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; object-src 'none'">
+<meta name="theme-color" content="#F5F2EC">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="stylesheet" href="../kit/kit.css">
+<style>
+.tb img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.tb figure{margin:14px 0 0}
+.tb figcaption{font-size:.9rem;color:var(--muted);margin-top:6px}
+.tb ol{padding-left:1.2em}.tb ol li{margin:0 0 .7em}
+.tb ul.check{list-style:none;padding:0;margin:0}
+.tb ul.check li{padding:10px 0 10px 30px;border-bottom:1px solid var(--line);position:relative}
+.tb ul.check li:last-child{border-bottom:0}
+.tb ul.check li::before{content:"";position:absolute;left:2px;top:14px;width:14px;height:14px;border:2px solid var(--copper);border-radius:4px}
+.tb h2{margin-top:0}
+.tb .card{margin-top:18px}
+.tb .back{display:inline-block;margin-bottom:14px}
+</style>
+</head>
+<body class="tb">
+<main class="page">
+<a class="back" href="./">&larr; Back to LT-Print</a>
+<h1>Printing labels: what to check</h1>
+<p class="muted" style="font-size:1.08rem">LT-Print always sends your design at the exact size you chose. What happens next is up to your browser's print box and your printer's own settings &mdash; and those two have to agree, or the design lands on the wrong part of the sticker.</p>
+
+<div class="card">
+<h2>One label is printing across two or more stickers</h2>
+<p>This is the common one on label printers, and it is almost never the design. There are two sizes in play:</p>
+<ol>
+<li><strong>The size LT-Print asks for.</strong> If you picked a 100 &times; 100&nbsp;mm label, the page it sends is 100 &times; 100&nbsp;mm.</li>
+<li><strong>The paper size your print box is set to.</strong> If that says something else &mdash; a bigger die-cut size, a "fit" or "reduction" size, A4 &mdash; the printer feeds to <em>its</em> size, and your design ends up straddling the gap between two stickers.</li>
+</ol>
+<p class="notice small"><strong>Quick test.</strong> In the print box, change the destination to <em>Save as PDF</em> and save the file. Open it and check the page size. If the PDF is the right size, the design is fine and everything left to fix is on the printer side.</p>
+</div>
+
+<div class="card">
+<h2>Fixing it</h2>
+<ol>
+<li><strong>Open the print box and look at Paper size.</strong> It needs to be the size of one of your labels. Not "fit", not "reduction", not the next size up.</li>
+<li><strong>If your label size is not in that list</strong>, the list is not the browser's &mdash; it comes from your printer's own driver. You have to add the size there first. The browser can only offer what the driver already knows about.</li>
+<li><strong>Add it in the printer's own settings.</strong> On Windows: Settings &rarr; Printers &amp; scanners &rarr; your printer &rarr; Printing preferences. Label printers usually have a media or paper definition button on the first tab, with a <em>New</em> option: give it a name, then type the label width, the label length, and the gap between labels on your roll. Measure the gap if you are not sure &mdash; die-cut rolls are commonly 2&ndash;3&nbsp;mm.</li>
+<li><strong>Close the browser and open it again.</strong> It reads the printer's size list when it starts, so a new size usually will not appear until then.</li>
+<li><strong>Print again</strong> and pick your new size in Paper size.</li>
+</ol>
+
+<figure>
+<img src="help/paper-size.png" alt="A browser print box with the Paper size row and the Headers and footers checkbox outlined.">
+<figcaption>The two settings that cause most of the trouble: Paper size (here it is set to a die-cut size that is <em>not</em> the 100 &times; 100&nbsp;mm label the design was made for, so the label sits on a taller sheet), and Headers and footers, which is on and will print the date, the page title and the web address onto your sticker.</figcaption>
+</figure>
+
+<figure>
+<img src="help/media-definition.png" alt="A Windows printing preferences window for a label printer, with the media name field and the media definition button outlined.">
+<figcaption>The same machine with the printer's own settings open. This is where label sizes are created and chosen &mdash; a 100 &times; 100&nbsp;mm die-cut definition here is what makes "100&times;100" available to the browser. The example is one Windows label printer; the wording differs between makes, but nearly all of them have a page like it.</figcaption>
+</figure>
+</div>
+
+<div class="card">
+<h2>Before every label print</h2>
+<ul class="check">
+<li><strong>Paper</strong> in LT-Print set to <em>One label per page</em>.</li>
+<li><strong>Paper size</strong> in the print box set to your label size.</li>
+<li><strong>Headers and footers</strong> turned off, or the browser prints the date, the title and the web address on the label.</li>
+<li><strong>Margins</strong> set to None.</li>
+<li><strong>Scale</strong> set to 100%, not "Fit to page" &mdash; fitting shrinks the design and throws the sizes out.</li>
+<li><strong>Background graphics</strong> turned on if your design has colour blocks or a filled panel, or they will not print.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>Other things that come up</h2>
+<p><strong>Text is cut off.</strong> LT-Print shrinks text to fit its box, but only so far. If a field is still too long it marks the box with a dashed outline on the canvas and warns you. Make the box bigger, shorten the text, or let it run to a second line.</p>
+<p><strong>A QR code will not scan.</strong> Print it at about 20&nbsp;mm square or larger, leave clear space around it, and keep it dark on a light background. Glossy labels under a hard light can also defeat a scanner &mdash; try it on matte.</p>
+<p><strong>Nothing prints, or you get a blank sticker.</strong> Check the printer is not showing Offline, and that you have the right destination selected &mdash; it is easy to leave it on Save as PDF after testing.</p>
+<p><strong>Colours look different on the label.</strong> Screens are backlit and labels are not, so a colour will always print a little darker and flatter. If it is badly out, check the printer's own media type setting matches the stock you have loaded (matte, gloss, synthetic), because that setting changes how much ink goes down.</p>
+<p><strong>Printing from a tablet or phone.</strong> The same rules apply but the print box is smaller and often hides the paper size behind a "more settings" or "options" link. If your tablet cannot reach the paper size at all, save to PDF, send it to a computer, and print it from there.</p>
+</div>
+
+<p class="small muted" style="margin-top:18px">Still stuck? Send us the printed label and a photo of your print box through the <a href="https://lineagetracker.org/feedback.html">feedback page</a> and we will work it out.</p>
+</main>
+<footer class="kfoot"><a href="https://lineagetracker.org">lineagetracker.org</a> · <a href="https://lineagetracker.org/privacy.html">Privacy</a> · <a href="https://lineagetracker.org/terms.html">Terms</a> · <a href="https://lineagetracker.org/feedback.html">Feedback</a></footer>
+</body>
+</html>

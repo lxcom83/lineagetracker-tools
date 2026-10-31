@@ -249,7 +249,8 @@ export function importHeights(data, site, opts = {}) {
   } else {
     // spatial hash of the points, in map units, then the 8 nearest within a reach
     const xs = data.xs, ys = data.ys, zs = data.zs, cs = opts.reach || Math.max(5, Math.sqrt((site.w * site.h) / Math.max(1, xs.length)) * 3), hash = new Map(), key = (a, b) => a * 73856093 ^ b * 19349663;
-    for (let k = 0; k < xs.length; k++) { const kk = key(Math.floor(xs[k] / cs), Math.floor(ys[k] / cs)); (hash.get(kk) || hash.set(kk, []).get(kk)).push(k); }
+    const PER_CELL = 64;   // only the eight nearest are used, so a bucket deeper than this adds nothing but work
+    for (let k = 0; k < xs.length; k++) { const kk = key(Math.floor(xs[k] / cs), Math.floor(ys[k] / cs)); const b = hash.get(kk) || hash.set(kk, []).get(kk); if (b.length < PER_CELL) b.push(k); }
     for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
       const [e, n] = map(i * g.cell, j * g.cell), cx = Math.floor(e / cs), cy = Math.floor(n / cs), near = [];
       for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const k of hash.get(key(cx + a, cy + b)) || []) { const d = Math.hypot(xs[k] - e, ys[k] - n); if (d <= cs * 1.5) near.push([d, zs[k]]); }
@@ -267,24 +268,53 @@ export function importHeights(data, site, opts = {}) {
 }
 /* fill nodes with no data from the nearest ones that have data (a few passes of averaging; the data's own values never change) */
 export function fillGaps(g) {
-  const known = new Uint8Array(g.z.length); let missing = 0;
-  for (let i = 0; i < g.z.length; i++) { if (Number.isNaN(g.z[i])) missing++; else known[i] = 1; }
-  for (let pass = 0; missing && pass < g.nx + g.ny; pass++) {
-    const add = [];
-    for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) { const k = j * g.nx + i; if (known[k]) continue; let s = 0, c = 0;
-      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < g.nx && b < g.ny && known[b * g.nx + a]) { s += g.z[b * g.nx + a]; c++; } }
-      if (c) add.push([k, s / c]); }
-    if (!add.length) break; for (const [k, v] of add) { g.z[k] = v; known[k] = 1; missing--; }
+  // Grows outwards from the nodes that have data, one ring at a time.  Same result as sweeping the whole grid
+  // once per ring, but each node is only ever looked at from its own neighbours: a small survey on a big site
+  // used to take seconds because every sweep walked every node again.
+  const nx = g.nx, ny = g.ny, n = g.z.length, known = new Uint8Array(n), pend = new Uint8Array(n);
+  let ring = [];
+  for (let i = 0; i < n; i++) if (!Number.isNaN(g.z[i])) { known[i] = 1; ring.push(i); }
+  if (!ring.length) { for (let i = 0; i < n; i++) g.z[i] = 0; return; }
+  while (ring.length) {
+    const next = [];
+    for (const k of ring) {
+      const i = k % nx, j = (k - i) / nx;
+      if (i + 1 < nx && !known[k + 1] && !pend[k + 1]) { pend[k + 1] = 1; next.push(k + 1); }
+      if (i > 0 && !known[k - 1] && !pend[k - 1]) { pend[k - 1] = 1; next.push(k - 1); }
+      if (j + 1 < ny && !known[k + nx] && !pend[k + nx]) { pend[k + nx] = 1; next.push(k + nx); }
+      if (j > 0 && !known[k - nx] && !pend[k - nx]) { pend[k - nx] = 1; next.push(k - nx); }
+    }
+    if (!next.length) break;
+    const vals = new Float64Array(next.length);   // worked out before any are written, so a ring averages only the ring before it
+    for (let c = 0; c < next.length; c++) {
+      const k = next[c], i = k % nx, j = (k - i) / nx; let sum = 0, cnt = 0;
+      if (i + 1 < nx && known[k + 1]) { sum += g.z[k + 1]; cnt++; }
+      if (i > 0 && known[k - 1]) { sum += g.z[k - 1]; cnt++; }
+      if (j + 1 < ny && known[k + nx]) { sum += g.z[k + nx]; cnt++; }
+      if (j > 0 && known[k - nx]) { sum += g.z[k - nx]; cnt++; }
+      vals[c] = cnt ? sum / cnt : 0;
+    }
+    for (let c = 0; c < next.length; c++) { const k = next[c]; g.z[k] = vals[c]; known[k] = 1; pend[k] = 0; }
+    ring = next;
   }
-  for (let i = 0; i < g.z.length; i++) if (Number.isNaN(g.z[i])) g.z[i] = 0;
+  for (let i = 0; i < n; i++) if (Number.isNaN(g.z[i])) g.z[i] = 0;
 }
 
 /* ---------- contour lines (marching squares): [{ level, lines: [[ [x, y], ... ], ...] }] in plan metres ---------- */
 export function contours(g, interval = 0.5, opts = {}) {
-  const r = range(g), out = [], start = Math.ceil(r.min / interval) * interval;
+  const r = range(g), out = [];
   if (!(interval > 0) || r.max - r.min < 1e-6) return out;
-  let count = 0;
-  for (let level = start; level <= r.max + 1e-9 && count++ < 400; level += interval) {
+  // One budget for the whole job.  The work is cells times levels, so a finely gridded site with a lot of fall
+  // used to take half a minute; the old flat limit of 400 levels simply dropped the highest contours with no
+  // word to the member.  Widening the spacing instead keeps the whole site covered, and `out.interval` says
+  // what spacing was actually drawn.
+  const cells = Math.max(1, (g.nx - 1) * (g.ny - 1)), MAX_WORK = 3e6;
+  const maxLevels = Math.max(1, Math.min(400, Math.floor(MAX_WORK / cells)));
+  let step = interval;
+  for (let guard = 0; guard < 60 && Math.floor((r.max - r.min) / step) + 1 > maxLevels; guard++) step *= 2;
+  out.interval = step;
+  const start = Math.ceil(r.min / step) * step;
+  for (let level = start; level <= r.max + 1e-9; level += step) {
     const segs = [], L = Math.round(level * 1e6) / 1e6, v = (i, j) => g.z[j * g.nx + i] - L + 1e-9;
     for (let j = 0; j < g.ny - 1; j++) for (let i = 0; i < g.nx - 1; i++) {
       if (opts.skip && opts.skip[j * (g.nx - 1) + i]) continue;   // cells a retaining wall passes through: the step is drawn by the wall, not as crowded contours
@@ -304,10 +334,13 @@ function joinSegments(segs, tol) {
   const used = new Uint8Array(segs.length), lines = [];
   const next = (pt, from) => { for (const [i, e] of ends.get(k(pt)) || []) if (!used[i] && i !== from) return [i, e]; return null; };
   for (let i = 0; i < segs.length; i++) {
-    if (used[i]) continue; used[i] = 1; const line = [segs[i][0], segs[i][1]];
-    for (const dir of [1, 0]) {
-      for (;;) { const tail = dir ? line[line.length - 1] : line[0], n = next(tail, -1); if (!n) break; used[n[0]] = 1; const p = segs[n[0]][1 - n[1]]; if (dir) line.push(p); else line.unshift(p); }
-    }
+    if (used[i]) continue; used[i] = 1; let line = [segs[i][0], segs[i][1]];
+    // forwards from the tail, then backwards from the head.  The backward points are gathered and turned round
+    // at the end: adding them to the front one at a time walked the whole line on every step.
+    for (;;) { const tail = line[line.length - 1], n = next(tail, -1); if (!n) break; used[n[0]] = 1; line.push(segs[n[0]][1 - n[1]]); }
+    const head = [];
+    for (;;) { const tail = head.length ? head[head.length - 1] : line[0], n = next(tail, -1); if (!n) break; used[n[0]] = 1; head.push(segs[n[0]][1 - n[1]]); }
+    if (head.length) { head.reverse(); line = head.concat(line); }   // concat, not a spread: a long contour would be too many arguments
     lines.push(tol ? thin(line, tol) : line);
   }
   return lines;

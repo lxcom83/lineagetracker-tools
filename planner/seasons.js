@@ -48,7 +48,9 @@ export const IN_ZONES = [
   ['in-arid', 'Desert and dry west: Rajasthan, Kutch', { group: 'By region', seasons: { kharif: R(7, 8), rabi: R(10, 11), zaid: R(2, 3) } }],
   ['in-hills', 'Himalayan hills and high ground (Himachal, Uttarakhand, Kashmir, Darjeeling, Nilgiris)', { group: 'By region', seasons: { kharif: R(4, 6), rabi: R(9, 10), zaid: R(3, 4) }, over: { potato: ['zaid'], pea: ['zaid', 'rabi'] } }],
 ];
-export const IN_PACK = seasonPack('India', IN_ZONES, crop => IN_CROPS[crop] || IN_CROPS.other);
+/* own-property reads: a crop named 'constructor' or 'toString' would otherwise find a function on the chain */
+const cropRow = (tbl, crop) => (Object.prototype.hasOwnProperty.call(tbl, crop) ? tbl[crop] : null) || tbl.other;
+export const IN_PACK = seasonPack('India', IN_ZONES, crop => cropRow(IN_CROPS, crop));
 
 /* ---------- Philippines ---------- */
 const PH_CROPS = {
@@ -67,4 +69,4 @@ export const PH_ZONES = [
   ['ph-t4', 'Type IV: rain through the year (Davao, Cotabato, Bukidnon lowlands, Palawan east, Camarines)', { group: 'By climate type', seasons: { dry: R(1, 4), wet: R(5, 10) } }],
   ['ph-highland', 'Cool highlands: Benguet, Baguio, Mountain Province, Bukidnon plateau, Tagaytay', { group: 'By climate type', seasons: { dry: R(10, 3), wet: R(5, 7), cool: ALL }, over: { tomato: ['dry', 'wet'], capsicum: ['dry', 'wet'] } }],
 ];
-export const PH_PACK = seasonPack('Philippines', PH_ZONES, crop => PH_CROPS[crop] || PH_CROPS.other);
+export const PH_PACK = seasonPack('Philippines', PH_ZONES, crop => cropRow(PH_CROPS, crop));

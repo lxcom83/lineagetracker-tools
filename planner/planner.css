@@ -43,6 +43,17 @@
 .pl-check{display:flex;align-items:center;gap:6px;margin:4px 0 8px}
 .pl-cross{border-color:#7A4FB5}
 .pl-hist{margin:6px 0 10px}.pl-hist p{margin:3px 0}
+/* indoor growing and hydro: the plan panel's own blocks */
+.pl-indoor,.pl-hydro{border-top:1.5px solid var(--line);margin-top:10px;padding-top:8px}
+.pl-indoor h3,.pl-hydro h3{margin:0 0 6px;font-size:1rem}
+.pl-indoor p,.pl-hydro p,.pl-res p,.pl-links p{margin:4px 0}
+.pl-sides{margin:8px 0}
+.pl-sides>summary{cursor:pointer;padding:3px 0}
+.pl-occ{display:block;width:100%;height:auto;margin:6px 0}
+.pl-res,.pl-links{border:1.5px solid var(--line);border-radius:12px;padding:8px 10px;margin:8px 0;background:var(--paper)}
+.pl-stage{border-left:3px solid var(--line);padding-left:8px;margin:6px 0}
+.pl-timeline{margin:6px 0}
+.pl-succ-out p{margin:3px 0}
 /* 3D view (beta) */
 .v3-wrap{position:fixed;inset:0;z-index:60;background:#9fb7c9;display:flex;flex-direction:column}
 .v3-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;padding:.4rem .7rem;background:var(--bg,#fff);border-bottom:1px solid var(--line,#ccc)}
@@ -132,7 +143,7 @@
 .pl-tabs .btn[aria-pressed="true"]{background:var(--ink,#26323d);color:#fff;border-color:transparent}
 .pl-setup{flex:1;min-height:0;overflow:auto;padding:20px 16px;background:var(--desk)}
 .pl-setup[hidden]{display:none!important}
-.pl-setup-in{max-width:760px;margin:0 auto;display:grid;gap:14px}
+.pl-setup-in{max-width:760px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .pl-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .pl-card h3{margin:0 0 6px}
 .pl-btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -192,3 +203,28 @@ body.ctl-touch .pr-left .addgrid .chip{min-height:48px}
 .pl-hud label{flex:0 0 auto;width:auto}
 .pl-hud .pl-hud-row{margin:0}
 .pl-elen-click{cursor:pointer;text-decoration:underline}
+
+/* a plain heading inside a panel block (these blocks are built with el(), so they cannot use the fold markers) */
+.pl-h{font-family:var(--f-head);font-weight:700;font-size:1.05rem;color:var(--navy);margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--line)}
+.pl-h:first-child{margin-top:0;padding-top:0;border-top:0}
+
+/* ---- a finger needs a bigger target than a mouse pointer ----
+   Measured on a tablet in the v1.13.0 review: small buttons were 32 px, fold headings 27.6 px, date boxes
+   27.6 px and tick boxes 26 px, against the 44 px a fingertip wants.  Only touch is changed; on a mouse the
+   compact sizes stay, because they read better on a desk. */
+input[type=date],input[type=time]{width:100%;min-height:42px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card)}
+body.ctl-touch .btn.sm{min-height:44px;padding:0 14px}
+body.ctl-touch .pl-sides>summary{min-height:44px;display:flex;align-items:center;padding:6px 0}
+body.ctl-touch input[type=date],body.ctl-touch input[type=time]{min-height:44px}
+body.ctl-touch .pl-check{min-height:44px;margin:2px 0 6px}
+body.ctl-touch .pl-check input[type=checkbox]{width:22px;height:22px;flex:none}
+body.ctl-touch input[type=color]{min-height:44px}
+body.ctl-touch .icon-btn.sm{min-width:44px;min-height:44px}
+body.ctl-touch .tw{min-width:40px;min-height:40px}
+body.ctl-touch .pl-ev{min-height:40px}
+body.ctl-touch .pl-3d-btn,body.ctl-touch .pr-3d .btn{min-height:44px}
+/* the resize handle: drawn the same, but the part that answers a finger is bigger */
+body.ctl-touch rect.pl-handle{stroke-width:14;stroke:transparent;paint-order:stroke}
+
+/* Setup at phone width: a long "Recent plans" name used to push the cards off the side of the screen */
+@media (max-width:520px){.pl-recent-n{white-space:normal;overflow-wrap:anywhere;min-width:0}}

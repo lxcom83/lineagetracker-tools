@@ -162,3 +162,6 @@ details.nudge summary{cursor:pointer;font-weight:700;font-size:.92rem;min-height
 .libcard .libuse small{color:var(--muted);display:block}
 .libcard .btn.sm{align-self:flex-start}
 @media (min-width:1000px){.stage-tips ul{columns:2;column-gap:28px}.stage-tips li{break-inside:avoid}}
+
+/* a text box whose words do not fit even at the smallest size (editor only, never printed) */
+.pr-canvas .it.cut{outline:1.5px dashed #B03A2E;outline-offset:1px}

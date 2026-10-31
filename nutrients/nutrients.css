@@ -1,0 +1,16 @@
+body.nu .nu-main{max-width:980px;margin:0 auto;padding:18px 16px 60px;display:grid;gap:16px}
+body.nu .nu-tabs{display:flex;gap:8px;flex-wrap:wrap}
+body.nu .nu-tabs button{min-height:44px;padding:0 16px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;cursor:pointer}
+body.nu .nu-tabs button[aria-pressed="true"]{background:var(--copper-l);border-color:var(--copper-l);color:#1F3557}
+body.nu .nu-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+body.nu label.nu-f{display:grid;gap:4px;font-size:.92rem}
+body.nu label.nu-f input,body.nu label.nu-f select{min-height:44px;padding:0 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+body.nu .nu-res{border-left:4px solid var(--copper-l);padding:10px 14px;background:var(--card);border-radius:10px}
+body.nu .nu-big{font-size:1.5rem;font-weight:800}
+body.nu .nu-warn{color:#8a4a00}
+body.nu .nu-low{color:#2a6fb0;font-weight:700}body.nu .nu-high{color:#b3441e;font-weight:700}body.nu .nu-ok{color:#2f7d32;font-weight:700}
+body.nu table.nu-t{width:100%;border-collapse:collapse;font-size:.92rem}
+body.nu table.nu-t th,body.nu table.nu-t td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+body.nu svg.nu-chart{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:12px}
+body.nu .nu-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+@media (max-width:640px){body.nu table.nu-t th:nth-child(5),body.nu table.nu-t td:nth-child(5){display:none}}

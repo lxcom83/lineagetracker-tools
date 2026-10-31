@@ -106,6 +106,7 @@ export function designView(ctx) {
     }
     scale.innerHTML = html;
     fitText(scale);
+    for (const tx of scale.querySelectorAll('.tx[data-cut]')) { const b = tx.closest('.it'); if (b) b.classList.add('cut'); }   // marked in the canvas, and named in the panel below
     drawOverlay();
   }
   const fieldNames = () => Object.fromEntries(fieldsFor(S.t.kind, S.t.columns).map(f => [f.key, '{' + f.key + '}']));
@@ -637,6 +638,7 @@ export function designView(ctx) {
     put(el('div', { class: 'row' }, [
       select('Up and down', it.valign, [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']], v => { it.valign = v; draw(); ctx.commit(); }),
       select('When it is too long', it.fit, [['shrink', 'Shrink to fit'], ['wrap', 'Wrap onto more lines'], ['clip', 'Cut off with …']], v => { it.fit = v; draw(); ctx.commit(); })]));
+    if (it.fit !== 'wrap' && scale.querySelector('.it[data-id="' + (window.CSS && CSS.escape ? CSS.escape(it.id) : it.id) + '"] .tx[data-cut]')) put(el('p', { class: 'notice warn small', text: 'This does not fit, even at the smallest size, so it is cut off with … . Choose "Wrap onto more lines", make the box bigger, or shorten the text.' }));
     section('Colour and options');
     put(el('div', { class: 'colors' }, [color('Colour', it.color, live(it, 'color'))]), check('Leave out when its fields are empty', it.hideEmpty, live(it, 'hideEmpty')));
   }

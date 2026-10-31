@@ -102,7 +102,7 @@ const likeWrap = pk => ({ ...pk, months: (crop, zone) => (hardyIn(crop, zone) ? 
    Australia (the sowing months above); others are added as data packs (see the research doc). */
 export const AU_ZONES = [['tropical', 'Tropical'], ['subtropical', 'Subtropical'], ['temperate', 'Temperate'], ['cool', 'Cool'], ['arid', 'Arid / inland']];
 const auLegacy = (crop, zone) => (GUIDES[crop] || GUIDES.other)[9][zone] || [];
-export const PACKS = { AU: { name: 'Australia', zones: AU_ZONES, months: auLegacy } };
+export const PACKS = Object.assign(Object.create(null), { AU: { name: 'Australia', zones: AU_ZONES, months: auLegacy } });   // null prototype: a crop called 'constructor' must not find a function here
 /* the frost-based packs (frost.js): the months are worked out from each zone's typical last frost and frost-free days */
 for (const cc of Object.keys(ZONES)) { for (const z of ZONES[cc]) FFD.set(z[0], z[3]); PACKS[cc] = likeWrap(frostPack(NAMES[cc], ZONES[cc], crop => (GUIDES[crop] || GUIDES.other)[6])); }
 for (const cc of Object.keys(REGIONS)) for (const z of REGIONS[cc]) FFD.set(z[0], z[3]);
