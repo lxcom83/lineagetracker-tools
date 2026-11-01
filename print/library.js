@@ -128,6 +128,33 @@ function dateSticker(w, h) {
   return b.done();
 }
 
+/* ---------- indoor growing: trays and reservoirs ---------- */
+const TRAY_COLS = ['Crop', 'Variety', 'Tray', 'Sown', 'Ready', 'Note'];
+function trayLabel(w, h) {
+  const b = make(`Tray label ${r2(w)} × ${r2(h)} mm`, 'table', w, h, TRAY_COLS), s = h / 40, p = 2.5;
+  b.rect('Band', 0, 0, w, 11 * s, INK, { locked: false })
+    .text('Crop', '{Crop}', p, 1.2 * s, w - 2 * p - 14, 9 * s, 13 * s, { bold: true, font: 'head', color: '#ffffff', hideEmpty: false })
+    .text('Tray', '{Tray}', w - p - 14, 1.2 * s, 14, 9 * s, 11 * s, { bold: true, color: '#ffffff', align: 'right' })
+    .text('Variety', '{Variety}', p, 13 * s, w - 2 * p, 7 * s, 9 * s, { color: '#222222' })
+    .text('Sown', 'Sown {Sown}', p, 22 * s, w / 2 - p, 6 * s, 8 * s, { color: '#222222' })
+    .text('Ready', 'Ready {Ready}', w / 2, 22 * s, w / 2 - p, 6 * s, 8 * s, { color: '#222222', align: 'right' })
+    .line('Rule', p, 30 * s, w - 2 * p)
+    .text('Note', '{Note}', p, 31.5 * s, w - 2 * p, 7 * s, 7 * s, { color: GREY });
+  return b.done();
+}
+const RES_COLS = ['Reservoir', 'Changed', 'Next change', 'EC target', 'pH target', 'Note'];
+function reservoirLabel(w, h) {
+  const b = make(`Reservoir label ${r2(w)} × ${r2(h)} mm`, 'table', w, h, RES_COLS), s = h / 50, p = 3;
+  b.text('Reservoir', '{Reservoir}', p, p, w - 2 * p, 11 * s, 16 * s, { bold: true, font: 'head', color: INK, hideEmpty: false })
+    .line('Rule', p, 15 * s, w - 2 * p, GOLD, 0.5)
+    .text('Changed', 'Changed {Changed}', p, 18 * s, w - 2 * p, 7 * s, 9 * s, { color: '#222222' })
+    .text('Next change', 'Next change {Next change}', p, 26 * s, w - 2 * p, 7 * s, 9 * s, { bold: true, color: '#222222' })
+    .text('EC target', 'EC {EC target}', p, 34 * s, w / 2 - p, 6 * s, 8 * s, { color: GREY })
+    .text('pH target', 'pH {pH target}', w / 2, 34 * s, w / 2 - p, 6 * s, 8 * s, { color: GREY, align: 'right' })
+    .text('Note', '{Note}', p, 41 * s, w - 2 * p, 6 * s, 7 * s, { color: GREY });
+  return b.done();
+}
+
 /* ---------- orders and paperwork ---------- */
 const ORDER_COLS = ['Name', 'Street', 'Place', 'Country', 'Phone', 'Order', 'Items', 'From', 'From address'];
 function packingSlip(w, h) {
@@ -185,6 +212,7 @@ export const LIBRARY_GROUPS = [
   { id: 'seed', name: 'Seed packets', desc: 'A front and a back that share one spreadsheet. Print the front on one label and the back on another.' },
   { id: 'id', name: 'Plant and animal ID', desc: 'Tags, cage cards and a breeding card. They fill in from your Lineage Tracker records.' },
   { id: 'pack', name: 'Packaging and product labels', desc: 'Jars, bags, egg boxes, shelf prices and date stickers. Your own name only.' },
+  { id: 'indoor', name: 'Indoor growing', desc: 'Tray labels and reservoir labels. Type them in, or fill them from a spreadsheet. Your own words only.' },
   { id: 'orders', name: 'Orders and paperwork', desc: 'Address labels, a packing slip, an invoice and a thank-you card. They fill in from LT-Catalogue orders.' },
 ];
 export const LIBRARY = [
@@ -200,6 +228,8 @@ export const LIBRARY = [
   { id: 'pack-egg', group: 'pack', name: 'Egg box label', desc: 'Count, packed date and your details (90 × 55 mm).', w: 90, h: 55, build: eggLabel, rows: [{ Product: 'Free range eggs', Count: 'One dozen', Date: '20 Oct 2026', Seller: 'Your farm', Address: 'Your town, state', Web: 'example.com' }] },
   { id: 'pack-price', group: 'pack', name: 'Price tag', desc: 'Name, a short line and a big price (50 × 30 mm).', w: 50, h: 30, build: shelfTag, rows: [{ Product: 'Black Cherry Tomato', Detail: 'Seedling, 10 cm pot', Price: '$4.50', Unit: 'each' }] },
   { id: 'pack-date', group: 'pack', name: 'Batch and date sticker', desc: 'Product, batch and best before (38.1 × 21.2 mm, 65 per A4 sheet).', w: 38.1, h: 21.2, sheet: 's65', build: dateSticker, rows: [{ Product: 'Tomato relish', Batch: '12', 'Best before': 'Oct 2027' }] },
+  { id: 'in-tray', group: 'indoor', name: 'Tray label', desc: 'Crop, variety, tray number, sown and ready dates (60 × 40 mm).', w: 60, h: 40, build: trayLabel, rows: [{ Crop: 'Basil', Variety: 'Sweet genovese', Tray: 'T3', Sown: '1 Nov', Ready: '15 Nov', Note: 'Under the blackout dome until day 3' }] },
+  { id: 'in-reservoir', group: 'indoor', name: 'Reservoir label', desc: 'Name, when the solution was changed and when it is next due, and your own EC and pH targets (75 × 50 mm).', w: 75, h: 50, build: reservoirLabel, rows: [{ Reservoir: 'Lettuce bench', Changed: '19 Oct', 'Next change': '2 Nov', 'EC target': '1.6 mS/cm', 'pH target': '5.8 to 6.2', Note: 'Top up with plain water' }] },
   { id: 'ord-address', group: 'orders', name: 'Address label', desc: 'From, then the buyer\'s address in big print (99.1 × 67.7 mm, 8 per A4 sheet).', w: 99.1, h: 67.7, sheet: 's8', build: () => addressStarter(99.1, 67.7, ORDER_COLS), rows: [{ Name: 'Sam Example', Street: '1 Garden Road', Place: 'Townsville QLD 4810', Country: 'Australia', Phone: '0400 000 000', Order: 'A12', Items: '', From: 'Your business', 'From address': 'PO Box 1, Your town' }] },
   { id: 'ord-slip', group: 'orders', name: 'Packing slip', desc: 'Order number, who it is for and what is in the parcel (A5, one per page).', w: 148, h: 210, paper: 'roll', build: packingSlip, rows: [{ Name: 'Sam Example', Street: '1 Garden Road', Place: 'Townsville QLD 4810', Country: 'Australia', Phone: '', Order: 'A12', Items: '2 × Black Cherry Tomato seeds\n1 × Waltham Butternut seeds', From: 'Your business', 'From address': 'PO Box 1, Your town' }] },
   { id: 'ord-invoice', group: 'orders', name: 'Invoice', desc: 'Your details, who it is for, items, total and how to pay (A4, one per page). Check what your country requires on an invoice, such as a tax or business number, and add it as a text box.', w: 210, h: 297, paper: 'roll', build: invoice, rows: [{ Name: 'Sam Example', Street: '1 Garden Road', Place: 'Townsville QLD 4810', Country: 'Australia', Phone: '', Order: 'A12', Items: '2 × Black Cherry Tomato seeds   $8.00\n1 × Waltham Butternut seeds   $4.50\nPostage   $3.00', From: 'Your business', 'From address': 'PO Box 1\nYour town\nBusiness number: add yours', Total: '$15.50', Payment: 'Pay by bank transfer to: add your details here. Please use the invoice number as the reference.' }] },

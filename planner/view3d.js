@@ -75,12 +75,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   // the side panel: find, what to show, the view controls
   const findIn = el('input', { type: 'search', class: 'v3-find', placeholder: 'Find a plant or variety…', 'aria-label': 'Find a plant or variety', autocomplete: 'off', maxlength: '60', value: findStart }), findMsg = el('p', { class: 'small muted', role: 'status' });
   const growCb = el('input', { type: 'checkbox', 'aria-label': 'Show what is growing in each bed' }), cntCb = el('input', { type: 'checkbox', 'aria-label': 'Show how many of each' });
+  let hideWalls = false; try { hideWalls = localStorage.getItem('ltplanner.hidewalls3d') === 'on'; } catch {}
+  const wallCb = el('input', { type: 'checkbox', checked: hideWalls, 'aria-label': 'Hide the walls of rooms and tents' });
   const grownCb = el('input', { type: 'checkbox', checked: !!grown });
   const yearsSel = el('select', { 'aria-label': 'Trees at this age', disabled: !grown, title: 'Trees and orchard plants at this age (about 8 years to full size). Other plants show fully grown.' }, [[0, 'Everything fully grown'], [1, 'Trees at 1 year'], [3, 'Trees at 3 years'], [5, 'Trees at 5 years']].map(([v, l]) => el('option', { value: v, text: l, selected: v === years })));
   const sec = (t, kids) => el('section', { class: 'v3-sec' }, [el('h3', { text: t }), ...kids]);
   const side = el('aside', { class: 'v3-side', 'aria-label': 'View options', hidden: !panelOpen }, [
     sec('Find', [findIn, findMsg]),
-    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each']), el('label', { class: 'small v3-chk', title: 'Ignore the date: draw every planting at its full, grown size, to see how the garden will look when mature' }, [grownCb, ' Show everything fully grown']), yearsSel]),
+    sec('Show', [el('label', { class: 'small v3-chk' }, [labCb, ' Names']), el('label', { class: 'small v3-chk' }, [growCb, ' What is growing in each bed']), el('label', { class: 'small v3-chk' }, [cntCb, ' How many of each']), el('label', { class: 'small v3-chk', title: 'Take away the walls, skirting and door frames of rooms and tents so you can see everything inside. The floor stays. In Person view you can walk through hidden walls.' }, [wallCb, ' Hide room walls']), el('label', { class: 'small v3-chk', title: 'Ignore the date: draw every planting at its full, grown size, to see how the garden will look when mature' }, [grownCb, ' Show everything fully grown']), yearsSel]),
     sec('View', [el('label', { class: 'small' }, ['Quality ', qSel]), el('label', { class: 'small' }, ['View distance ', rangeSel]), el('label', { class: 'small' }, ['Projection ', projSel]), exLbl, el('label', { class: 'small' }, ['Sun ', hourIn])]),
     info, help]);
   const homeB = el('button', { type: 'button', class: 'icon-btn v3-nb', title: 'Home view (H)', 'aria-label': 'Home view' }, [navIcon('home')]);
@@ -281,12 +283,12 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     const wc = tent ? '#3a4046' : it.wallColour; it.__lab = floor + H + 0.25;
     for (const [u0, v0, u1, v1] of W.segs) {
       const len = Math.hypot(u1 - u0, v1 - v0); if (len < 0.02) continue; const horiz = v0 === v1, [x, z] = local(it, (u0 + u1) / 2, (v0 + v1) / 2);
-      const wall = box(horiz ? len : t, H, horiz ? t : len, wc, x, floor, z, ry); wall.material = ghostMat(wc); wall.renderOrder = 2;
-      const foot = box(horiz ? len : t + 0.002, 0.12, horiz ? t + 0.002 : len, tent ? '#22262a' : '#bdb7aa', x, floor, z, ry);   // a solid skirting so the walls read even when see-through
+      const wall = box(horiz ? len : t, H, horiz ? t : len, wc, x, floor, z, ry); wall.material = ghostMat(wc); wall.renderOrder = 2; wall.userData.wall = true;
+      const foot = box(horiz ? len : t + 0.002, 0.12, horiz ? t + 0.002 : len, tent ? '#22262a' : '#bdb7aa', x, floor, z, ry); foot.userData.wall = true;   // a solid skirting so the walls read even when see-through
     }
     if (W.door) {   // the door: a gap you can walk through, a lintel over it, and a leaf standing open for a room
       const d = W.door, dh = Math.min(tent ? 1.5 : 2.0, H - 0.1), [u0, v0, u1, v1] = d.mk(d.a, d.b), horiz = v0 === v1, len = Math.hypot(u1 - u0, v1 - v0), [x, z] = local(it, (u0 + u1) / 2, (v0 + v1) / 2);
-      if (H - dh > 0.02) { const l = box(horiz ? len : t, H - dh, horiz ? t : len, wc, x, floor + dh, z, ry); l.material = ghostMat(wc); l.renderOrder = 2; }
+      if (H - dh > 0.02) { const l = box(horiz ? len : t, H - dh, horiz ? t : len, wc, x, floor + dh, z, ry); l.material = ghostMat(wc); l.renderOrder = 2; l.userData.wall = true; }
     }
   }
   const SHELF_METAL = '#a9b1b9', BOARD = '#c9ced4';
@@ -511,8 +513,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       if (!o.isMesh || o.userData.keep || !o.geometry || !o.geometry.isBufferGeometry || Array.isArray(o.material)) return;
       const g = o.geometry, at = g.attributes; if (!at.position || !at.normal || !at.uv || Object.keys(at).length !== 3) return;
       if (!g.boundingBox) g.computeBoundingBox(); const ctr = g.boundingBox.getCenter(new THREE.Vector3()).applyMatrix4(o.matrixWorld);   // where the piece really sits on the plan, whatever group it is in
-      const key = o.material.uuid + '|' + (o.userData.glass ? 1 : 0) + '|' + o.renderOrder + '|' + Math.floor(ctr.x / 80) + '|' + Math.floor(ctr.z / 80);
-      let b = buckets.get(key); if (!b) buckets.set(key, b = { mat: o.material, glass: !!o.userData.glass, ro: o.renderOrder, list: [] }); b.list.push(o); old.push(o);
+      const key = o.material.uuid + '|' + (o.userData.glass ? 1 : 0) + '|' + (o.userData.wall ? 1 : 0) + '|' + o.renderOrder + '|' + Math.floor(ctr.x / 80) + '|' + Math.floor(ctr.z / 80);
+      let b = buckets.get(key); if (!b) buckets.set(key, b = { mat: o.material, glass: !!o.userData.glass, wall: !!o.userData.wall, ro: o.renderOrder, list: [] }); b.list.push(o); old.push(o);
     });
     let made = 0;
     for (const b of buckets.values()) {
@@ -528,12 +530,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
         vo += ps.count;
       }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(U, 2)); geo.setIndex(new THREE.BufferAttribute(I, 1));
-      const m = new THREE.Mesh(geo, b.mat); m.userData.glass = b.glass; m.renderOrder = b.ro; grp.add(m); made++;
+      const m = new THREE.Mesh(geo, b.mat); m.userData.glass = b.glass; m.userData.wall = b.wall; m.renderOrder = b.ro; grp.add(m); made++;
       for (const o of b.list) { if (o.parent) o.parent.remove(o); o.geometry.dispose(); }
     }
     return made;
   };
   const mergedMeshes = mergeStatic(solids);
+  const applyWalls = () => { solids.traverse(o => { if (o.isMesh && o.userData.wall) o.visible = !hideWalls; }); };
+  applyWalls();
   groundMesh.receiveShadow = true; solids.traverse(o => { if (o.isMesh) { o.castShadow = !o.userData.glass; o.receiveShadow = !o.userData.glass; } });
   const setShadows = q => { const on = shadowsFor(q); if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; if (THREE.PCFSoftShadowMap !== undefined) r.shadowMap.type = THREE.PCFSoftShadowMap; /* the bundled three.js may not have it; setting undefined logs a warning */ mats.forEach(m => { m.needsUpdate = true; }); surfMats.forEach(m => { m.needsUpdate = true; }); mat.needsUpdate = true; groundMesh.material.needsUpdate = true; } sun.castShadow = on; return on; };
   // plants that stand inside a raised bed sit on its soil, not on the ground under it
@@ -741,7 +745,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       if (nTray) bits.push(nTray.toLocaleString() + (nTray === 1 ? ' tray' : ' trays'));
       if (nSys) bits.push(nSys.toLocaleString() + (nSys === 1 ? ' hydro system' : ' hydro systems'));
       info.textContent = (bits.length ? bits.join(' · ') : 'nothing planted yet') + ' · ' + sceneObjs.toLocaleString() + ' parts drawn'; }
-    window.__v3scene = scene; window.__v3 = { merged: mergedMeshes, calls: drawCalls, objs: sceneObjs, glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
+    window.__v3scene = scene; window.__v3 = { walls: () => { let c = 0; solids.traverse(o => { if (o.isMesh && o.userData.wall && o.visible) c++; }); return c; }, merged: mergedMeshes, calls: drawCalls, objs: sceneObjs, glow: glowObjs.length / 2, species: singles.map(s => s[2]).concat(rules.map(q => q.species)), labels: labels.filter(L => L.tag.style.display !== 'none').map(L => L.tag.textContent), labelsOn: showLabels, stats: t, cam: { yaw: st.yaw, pitch: st.pitch, dist: st.dist, tx: st.tx, tz: st.tz, proj: projSel.value, north: N }, rules: blocks.length, ground: !!g, cube: R,
       beds: beds.map(b => ({ id: b.id, top: b.__top })), under: (x, z) => gy(x, z), plantY, view: k => ({ home, fit, top: topView })[k](), look: o => flyTo(o, 1), dir: (x, y, z) => goToCubeDir(new THREE.Vector3(x, y, z)) };
     if (anim) schedule();
     if (anim || moving) schedule();
@@ -813,7 +817,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
       else if (it.kind === 'hydro') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));
       else if (it.kind === 'shelf') polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));
       else if (it.kind === 'gear' && !it.shelf && it.w >= 0.25 && it.h >= 0.25) polys.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => local(it, a * it.w / 2, b * it.h / 2)));   // a reservoir or pump on the floor is something you walk round
-      else if (it.kind === 'room') for (const [u0, v0, u1, v1] of roomWalls(it, 0.2).segs) lines.push([local(it, u0, v0), local(it, u1, v1)]);   // the walls block you, the door gap lets you through
+      else if (it.kind === 'room') { if (!hideWalls) for (const [u0, v0, u1, v1] of roomWalls(it, 0.2).segs) lines.push([local(it, u0, v0), local(it, u1, v1)]); }   // the walls block you, the door gap lets you through; walls you have hidden do not
     }
     return { polys, lines }; };
   const blockedAt = (x, z) => { if (!blockers) blockers = buildBlockers(); for (const q of blockers.polys) if (inPoly(x, z, q) || q.some((a, i) => segD(x, z, a, q[(i + 1) % q.length]) < WR)) return true; for (const l of blockers.lines) for (let i = 1; i < l.length; i++) if (segD(x, z, l[i - 1], l[i]) < WR * 0.8) return true; return false; };
@@ -892,6 +896,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   shareB.addEventListener('click', () => openShare({ title: plan.name || 'My plan', date: new Date(date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }), render: shot }));
   setGlow(findStart ? matches(findStart) : glow); setSubs(); let savedPanel = null; try { savedPanel = localStorage.getItem('ltplanner.v3panel'); } catch {} if (window.innerWidth < 900 && panelOpen && !savedPanel) setPanel(false);
   qSel.addEventListener('change', () => { F.setQuality(qSel.value); field.setQuality(qSel.value); fv.shadows = setShadows(qSel.value); fv.setDetail(1, '_'); fv.setDetail(1, qSel.value); schedule(); });
+  wallCb.addEventListener('change', () => { hideWalls = wallCb.checked; applyWalls(); blockers = null; try { localStorage.setItem('ltplanner.hidewalls3d', hideWalls ? 'on' : 'off'); } catch {} schedule(); });
   labCb.addEventListener('change', () => { showLabels = labCb.checked; labelsEl.hidden = !showLabels; try { localStorage.setItem('ltplanner.labels3d', showLabels ? 'on' : 'off'); } catch {} schedule(); });
   projSel.addEventListener('change', () => { if (walk && projSel.value === 'ortho') exitWalk(); schedule(); }); hourIn.addEventListener('input', schedule); addEventListener('resize', schedule);
   let closed = false;

@@ -77,7 +77,7 @@ export function farm() {
   add({ id: 'house', kind: 'building', folder: 'structures', name: 'Farmhouse', x: 110, y: 328, w: 20, h: 11, rot: 0, wallH: 2.8, roof: 'hip', pitch: 24, ridge: 'auto', wallColour: '#E4DCC8', roofColour: '#7A3B2E', windows: true },
     { id: 'verandah', kind: 'pergola', folder: 'structures', name: 'Verandah', x: 110, y: 335.5, w: 20, h: 3, rot: 0, height: 2.5, cover: 'roof', colour: '#7a5a3a' },
     { id: 'kgpergola', kind: 'pergola', folder: 'structures', name: 'Grape pergola', x: 150, y: 270, w: 5, h: 8, rot: 0, height: 2.4, cover: 'vine', colour: '#6a4d33' },
-    line('rwall', 'wall', 'Stone retaining wall', [[72, 306], [100, 301], [140, 301], [162, 307]], { height: 0.9, material: 'stone', retain: { high: 'left', split: 0.5 } }),
+    line('rwall', 'wall', 'Stone retaining wall', [[72, 306], [100, 301], [140, 301], [162, 307]], { height: 0.9, material: 'stone', retain: { high: 'left', split: 1 } }),
     line('kgfence', 'fence', 'Kitchen garden fence', [[36, 243], [186, 243], [186, 298], [36, 298], [36, 243]], { height: 1.8, style: 'pickets', colour: '#F1ECDD' }));
   let n = 0;
   for (let j = 0; j < 4; j++) for (let i = 0; i < 6; i++) add({ id: 'rb' + (n++), kind: 'block', folder: 'beds', name: blocks[defs[(i + j) % 4]].name, def: defs[(i + j) % 4], x: 46 + i * 15, y: 250 + j * 5, rot: 0 });

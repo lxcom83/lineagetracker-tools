@@ -111,5 +111,14 @@ export function cleanDoc(p) {
   return { format: FORMAT, version: VERSION, name: str(p.name, 80) || 'My reservoirs', units: p.units === 'ft' ? 'ft' : 'm', scale: own(PPM_SCALES, String(p.scale)) ? +p.scale : 500, res };
 }
 export const blankDoc = () => cleanDoc({ format: FORMAT, version: VERSION, res: [{ name: 'Reservoir 1' }] });
+/* A worked example for people opening the tool for the first time: an invented lettuce-bench reservoir with two weeks of readings that end today.
+   The product numbers are made up to show how the sums work. Members always type their own label figures. */
+export function exampleReservoir(todayIso) {
+  const base = day(todayIso) || new Date().toISOString().slice(0, 10), t0 = new Date(base + 'T00:00:00Z');
+  const ago = n => { const d = new Date(t0); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+  const rows = [[13, 1.5, 5.9, 20.5, 'Fresh mix'], [11, 1.6, 6.1, 20.8], [9, 1.8, 6.3, 21.4, 'EC creeping up as plants drink'], [8, 1.5, 6.3, 21.1, 'Topped up with plain water'], [6, 1.6, 6.5, 21.0, 'pH drifting up'], [5, 1.6, 5.9, 21.6, 'Adjusted pH'], [3, 1.7, 6.0, 21.9], [0, 1.9, 6.2, 22.2]];
+  return cleanDoc({ format: FORMAT, version: VERSION, res: [{ name: 'Example: lettuce bench', litres: 40, band: 'greens', labelDose: 2, doseUnit: 'mlL', labelEc: 1.3, waterEc: 0.2, changeEvery: 14, lastChange: ago(13),
+    readings: rows.map(([n, ec, ph, temp, note]) => ({ date: ago(n), ec, ph, temp, note: note || '' })) }] }).res[0];
+}
 /* next solution change: lastChange plus changeEvery days (ISO), or '' */
 export function nextChange(r) { if (!r.lastChange) return ''; const d = new Date(r.lastChange + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + r.changeEvery); return d.toISOString().slice(0, 10); }

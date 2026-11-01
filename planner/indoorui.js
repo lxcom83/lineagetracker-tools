@@ -14,7 +14,13 @@ export function make(ctx) {
   /* a length the member can type the way they think: 125, 125cm, 4'1", 49in */
   const lenF = (labelText, it, key, lo, hi) => {
     const inp = el('input', { value: L(it[key]), inputmode: 'text', 'aria-label': labelText, title: units() === 'ft' ? 'Type feet and inches, like 4\' 1", or 49 in, or 125 cm' : 'Type metres or centimetres, like 1.25 m or 125 cm' });
-    inp.addEventListener('change', () => { const v = I.parseLen(inp.value, units()); if (v == null || v < lo || v > hi) { toast('Type a length between ' + L(lo) + ' and ' + L(hi) + '.'); inp.value = L(it[key]); return; } it[key] = Math.round(v * 1000) / 1000; commit(); });
+    inp.addEventListener('change', () => {
+      let v = I.parseLen(inp.value, units()), note = '';
+      /* a plain number is metres (or feet), so "30" for a light height is 30 m and is refused. Small fields are nearly always meant in centimetres (or inches): try that before giving up. */
+      if (v != null && v > hi && /^\s*\d+(?:[.,]\d+)?\s*$/.test(inp.value) && (Number.isInteger(+inp.value.trim().replace(',', '.')) || +inp.value.trim().replace(',', '.') >= 10)) { /* only a number over the top, and only a whole number or 10 and up: 1.2 or 3.5 was meant as metres and is refused, 30 or 30.5 was meant as centimetres */ const alt = I.parseLen(inp.value.trim() + (units() === 'ft' ? ' in' : ' cm'), units()); if (alt != null && alt >= lo && alt <= hi) { v = alt; note = 'Taken as ' + inp.value.trim() + (units() === 'ft' ? ' inches' : ' cm') + '.'; } }
+      if (v == null || v < lo || v > hi) { toast('Type a length between ' + L(lo) + ' and ' + L(hi) + ', like ' + L(Math.min(hi, Math.max(lo, units() === 'ft' ? 0.3048 : 0.3))) + '.'); inp.value = L(it[key]); return; }
+      it[key] = Math.round(v * 1000) / 1000; commit(); if (note) toast(note);
+    });
     return el('label', { class: 'small pl-field' }, [labelText, inp]);
   };
   /* looking down on a shelf the tiers sit on top of each other: pick one tier to work on, the others fade back and cannot be clicked */
