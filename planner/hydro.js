@@ -7,6 +7,11 @@ export const HYDRO_TYPES = {
   dwc:    { name: 'Deep water culture (raft)', pumped: false, air: true, note: 'Plants float on a raft over aerated nutrient solution.' },
   nft:    { name: 'Nutrient film (NFT channels)', pumped: true, air: false, note: 'A thin film of solution runs down sloped channels and returns to the reservoir.' },
   ebb:    { name: 'Ebb and flow (flood table)', pumped: true, air: false, note: 'A pump floods the table on a timer, then it drains back.' },
+  dutch:  { name: 'Dutch buckets (drip to pots)', pumped: true, air: false, note: 'Buckets of media on a rack. A drip line feeds each one and the drain pipe carries the extra back to the reservoir. Suits big fruiting plants.' },
+  drip:   { name: 'Drip bench (pots on a table)', pumped: true, air: false, note: 'Pots of media on a table, each with a drip stake. The tray under them drains back to the reservoir.' },
+  tower:  { name: 'Vertical tower', pumped: true, air: false, note: 'A tall column with pockets for plants. Solution is pumped to the top and trickles down inside.' },
+  wick:   { name: 'Wick pots (passive)', pumped: false, air: false, note: 'Pots of media over a reservoir. Cord wicks draw the solution up. No pump.' },
+  media:  { name: 'Media bed (flood and drain)', pumped: true, air: false, note: 'A deep bed of clay pebbles or similar, flooded and drained on a timer. Plants grow straight in the media.' },
 };
 export const HYDRO_KEYS = Object.keys(HYDRO_TYPES);
 export const DRAINS = ['recirculate', 'waste'];
@@ -27,6 +32,7 @@ export const RESERVOIR_L = { bucket: 20, reservoir50: 50, reservoir100: 100 };
 
 /* plant sites worked out from the box */
 export function sites(h) {
+  if (h.type === 'tower') return Math.max(4, Math.min(60, Math.round(+h.pockets || 20)));   // a tower's plants go in pockets up the column, not on a grid
   const sp = Math.max(0.05, +h.spacing || 0.2);
   if (h.type === 'nft') { const ch = Math.max(1, Math.round(+h.channels || 1)); return ch * Math.max(1, Math.floor((h.w + 1e-9) / sp)); }
   return Math.max(1, Math.floor((h.w + 1e-9) / sp)) * Math.max(1, Math.floor((h.h + 1e-9) / sp));
@@ -168,6 +174,11 @@ export const TEMPLATES = {
   dwc: { name: 'DWC tub (raft)', note: 'A tub with a raft, an air pump and a power link.' },
   nft: { name: 'NFT bench', note: 'Channels 20 cm apart, a reservoir and a pump.' },
   ebb: { name: 'Ebb and flow table', note: 'A flood table, a reservoir, a pump and a timer.' },
+  dutch: { name: 'Dutch bucket row', note: 'Buckets on a rack with a drip line, a drain pipe, a reservoir and a pump.' },
+  drip: { name: 'Drip bench', note: 'Pots on a table with drip stakes, a reservoir and a pump.' },
+  tower: { name: 'Vertical tower', note: 'One tower with its reservoir and pump.' },
+  wick: { name: 'Wick pots', note: 'Pots over a reservoir, no pump.' },
+  media: { name: 'Media bed', note: 'A flood-and-drain bed, a reservoir, a pump and a timer.' },
 };
 export function template(key, rawOpts = {}) {
   const opts = Object.assign(Object.create(null), rawOpts && typeof rawOpts === 'object' ? rawOpts : {});   // a copy: the caller's own object is not written into
@@ -190,14 +201,38 @@ export function template(key, rawOpts = {}) {
     items.push({ kind: 'gear', item: nSites > 33 ? 'reservoir100' : 'reservoir50', litres: Math.min(5000, Math.max(50, Math.ceil(nSites * 1.5))), dx: run / 2 + 0.5, dy: 0 });   // about 1.5 L a plant, inside the 1 to 3.8 L guide
     items.push({ kind: 'gear', item: 'water_pump', dx: run / 2 + 0.5, dy: 0.5 });
     items.push({ kind: 'gear', item: 'power_board', dx: run / 2 + 0.5, dy: 0.9 });
-    link(0, 1, 'water'); link(1, 2, 'water'); link(3, 2, 'power');
+    link(0, 1, 'water'); link(1, 2, 'water'); link(2, 0, 'water'); link(3, 2, 'power');
   } else if (key === 'ebb') {
     items.push({ kind: 'hydro', type: 'ebb', dx: 0, dy: 0, w: 0.8, h: 0.6, spacing: 0.2, drain: 'recirculate', name: 'Flood table' });
     items.push({ kind: 'gear', item: 'reservoir50', dx: 0.9, dy: 0 });
     items.push({ kind: 'gear', item: 'water_pump', dx: 0.9, dy: 0.5 });
     items.push({ kind: 'gear', item: 'timer', dx: 0.9, dy: 0.9 });
     items.push({ kind: 'gear', item: 'power_board', dx: 1.3, dy: 0.9 });
-    link(0, 1, 'water'); link(1, 2, 'water'); link(3, 2, 'control'); link(4, 3, 'power'); link(4, 2, 'power');
+    link(0, 1, 'water'); link(1, 2, 'water'); link(2, 0, 'water'); link(3, 2, 'control'); link(4, 3, 'power'); link(4, 2, 'power');
+  } else if (key === 'dutch' || key === 'drip') {
+    const cols = Math.round(num(opts.cols, 4, 1, 12)), rows = Math.round(num(opts.rows, key === 'dutch' ? 2 : 2, 1, 6)), sp = key === 'dutch' ? 0.3 : 0.25, n = cols * rows;
+    items.push({ kind: 'hydro', type: key, dx: 0, dy: 0, w: cols * sp, h: rows * sp, spacing: sp, drain: 'recirculate', name: key === 'dutch' ? 'Dutch bucket row' : 'Drip bench' });
+    items.push({ kind: 'gear', item: n > 8 ? 'reservoir100' : 'reservoir50', litres: Math.min(5000, Math.max(50, Math.ceil(n * 4))), dx: cols * sp / 2 + 0.6, dy: 0 });
+    items.push({ kind: 'gear', item: 'water_pump', dx: cols * sp / 2 + 0.6, dy: 0.5 });
+    items.push({ kind: 'gear', item: 'power_board', dx: cols * sp / 2 + 0.6, dy: 0.9 });
+    link(0, 1, 'water'); link(1, 2, 'water'); link(2, 0, 'water'); link(3, 2, 'power');
+  } else if (key === 'tower') {
+    const n = Math.round(num(opts.sites, 20, 4, 60));
+    items.push({ kind: 'hydro', type: 'tower', dx: 0, dy: 0, w: 0.35, h: 0.35, spacing: 0.2, pockets: n, drain: 'recirculate', name: 'Vertical tower' });
+    items.push({ kind: 'gear', item: 'reservoir50', dx: 0.7, dy: 0 });
+    items.push({ kind: 'gear', item: 'water_pump', dx: 0.7, dy: 0.5 });
+    items.push({ kind: 'gear', item: 'power_board', dx: 0.7, dy: 0.9 });
+    link(0, 1, 'water'); link(1, 2, 'water'); link(2, 0, 'water'); link(3, 2, 'power');
+  } else if (key === 'wick') {
+    const cols = Math.round(num(opts.cols, 4, 1, 12)), rows = Math.round(num(opts.rows, 2, 1, 6)), sp = 0.2;
+    items.push({ kind: 'hydro', type: 'wick', dx: 0, dy: 0, w: cols * sp, h: rows * sp, spacing: sp, volume: Math.round(cols * rows * 1.5 * 10) / 10, drain: 'recirculate', name: 'Wick pots' });
+  } else if (key === 'media') {
+    items.push({ kind: 'hydro', type: 'media', dx: 0, dy: 0, w: 1.2, h: 0.6, spacing: 0.25, drain: 'recirculate', name: 'Media bed' });
+    items.push({ kind: 'gear', item: 'reservoir100', dx: 1.3, dy: 0 });
+    items.push({ kind: 'gear', item: 'water_pump', dx: 1.3, dy: 0.6 });
+    items.push({ kind: 'gear', item: 'timer', dx: 1.3, dy: 1.0 });
+    items.push({ kind: 'gear', item: 'power_board', dx: 1.7, dy: 1.0 });
+    link(0, 1, 'water'); link(1, 2, 'water'); link(2, 0, 'water'); link(3, 2, 'control'); link(4, 3, 'power'); link(4, 2, 'power');
   } else return { items: [], conns: [] };
   return { items, conns };
 }

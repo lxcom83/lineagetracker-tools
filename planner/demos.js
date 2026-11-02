@@ -84,6 +84,7 @@ function hydroRoom() {
   const link = (id, from, to, medium) => items.push({ id, kind: 'conn', folder: 'indoor', name: 'Link', from, to, medium });
   link('c1', 'nft', 'res1', 'water'); link('c2', 'res1', 'pump1', 'water'); link('c3', 'board1', 'pump1', 'power'); link('c4', 'air1', 'dwc', 'air'); link('c5', 'board1', 'air1', 'power');
   link('c6', 'ebb', 'res2', 'water'); link('c7', 'res2', 'pump2', 'water'); link('c8', 'timer1', 'pump2', 'control');
+  link('c9', 'pump1', 'nft', 'water'); link('c10', 'pump2', 'ebb', 'water');   // each pump feeds its system; the water comes back to the reservoir through the return link
   items.push({ id: 'n1', kind: 'note', folder: 'ground', name: 'Note', x: 4, y: 6.2, text: 'Select a system for its warnings and links. Drag the date to watch the lettuce grow. The flood table has no power link yet, on purpose.' });
   return { format: FORMAT, version: VERSION, name: 'Demo: hydro room', site: { w: 10, h: 6.5, north: 0, lat: -33.9, lon: 151.2, grid: 0.5, country: 'AU', zone: 'temperate' }, date: '2026-11-08', items };
 }

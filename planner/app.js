@@ -118,7 +118,7 @@ async function openRecent(i) { const r = recentList()[i]; if (!r) return; let p;
   if (!stashPlan(S.plan) && !(await confirmBox('Replace the plan you are working on?', 'It is too big to keep in Recent plans. Download it first if you want to keep it.', 'Replace it'))) return;
   try { const l = recentList(), j = JSON.stringify(r.plan), k = l.findIndex(x => JSON.stringify(x.plan) === j); if (k >= 0) { l.splice(k, 1); localStorage.setItem(RECENT_KEY, JSON.stringify(l)); } } catch {}   // it is open now, so it leaves the list
   loadPlan(p, true); toast('Opened "' + p.name + '".'); if (S.tab === 'setup') renderSetup(); }
-function loadPlan(p, noStash) { holdDoc = false; if (!noStash && S.plan && S.plan !== p) stashPlan(S.plan); if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); limitToast = false; wideToast = false; tierToast = false; S.tierView = 0; S.plan = p; S.editOutline = false; S.drawOutline = false; S.od = null; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
+function loadPlan(p, noStash) { holdDoc = false; S.portFrom = null; cancelPortDrag(); if (!noStash && S.plan && S.plan !== p) stashPlan(S.plan); if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); limitToast = false; wideToast = false; tierToast = false; S.tierView = 0; S.plan = p; S.editOutline = false; S.drawOutline = false; S.od = null; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
 
 /* ---------- the page ---------- */
 function build(g = {}) {
@@ -377,7 +377,7 @@ function drawAll() {
   if (S.plan && items().some(i => i.kind === 'conn')) M.syncConns(items());   // links keep up with a drag, not only with the commit at the end
   if (!S.view || !svg) return; if (S.tab === 'setup') { clearTimeout(setupT); setupT = setTimeout(renderSetup, 0); } drawScene(); tree.render(); drawProps(); drawBlocks(); drawCal(); drawPlaces(); }
 /* contour lines from the plan's ground heights (worked out once per height set and interval, then reused) */
-let contourCache = { gd: null, step: 0, lines: [] }, getDrag = () => null;
+let contourCache = { gd: null, step: 0, lines: [] }, getDrag = () => null, cancelPortDrag = () => { S.connDrag = null; };
 let tickBudget = 0, limitToast = false, wideToast = false, tierToast = false, curView = null;
 /* the part of the plan on screen, in plan metres (null when the view is not ready): lets heavy drawing skip what cannot be seen */
 function viewRect() { try { const v = S.view, w = svg.clientWidth || 1200, h = svg.clientHeight || 800; return [-v.x / v.scale, -v.y / v.scale, (w - v.x) / v.scale, (h - v.y) / v.scale]; } catch { return null; } }
@@ -530,6 +530,7 @@ function drawScene() {
     world.append(sv('rect', { x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1], class: 'pl-sel', 'vector-effect': 'non-scaling-stroke' }));
     if (S.sel.size === 1 && !it.locked) handlesFor(it).forEach(hd => world.append(sv('rect', { x: hd.x - 6 / v.scale, y: hd.y - 6 / v.scale, width: 12 / v.scale, height: 12 / v.scale, class: 'pl-handle', 'data-handle': hd.k })));
   }
+  if (INx && S.plan && !S.drawOutline && (S.tool === 'select' || S.tool === 'conn')) IN().drawPorts(world);   // the dots where hoses and cables join
   // drawing in progress
   if (S.draft) {
     const dr = S.draft;
@@ -626,7 +627,7 @@ const TOOL_HINT = { hydro: 'Hydro system: click where it goes. It comes with its
   room: 'Room or tent: tap for a 3 × 3 m room, or drag the size you want.', shelf: 'Shelf: tap inside a room, or drag the size you want.',
   tray: 'Tray: tap on a shelf. It lands on the first free tier, at the real size of its tray type.', gear: 'Equipment: tap where it goes; on a shelf it joins that tier.' };
 function setTool(t) {
-  S.linkFrom = null;
+  S.linkFrom = null; S.portFrom = null; cancelPortDrag();
   if (t === 'shape') { startOutline('shape'); return; }
   S.tool = t; S.draft = null; S.ghost = null; if (t === 'select') { S.keep = false; if (keepCb) keepCb.checked = false; }
   Object.entries(toolBtns).forEach(([k, b]) => b.setAttribute('aria-pressed', String(k === t)));
@@ -788,12 +789,18 @@ function finishOutline(d) {   // a corner drag ends (finger up, cancelled, or a 
   if (!setPoly(S.plan.site.poly.map(q => q.slice()), true)) { if (d && d.orig) S.plan.site.poly = d.orig; toast('That outline would be too small or cross itself, so the corner went back.'); drawAll(); }
 }
 function wireCanvas() {
-  const pointers = new Map(); let drag = null, pinch = null, lineGest = -1; getDrag = () => drag;
+  const pointers = new Map(); let drag = null, pinch = null, lineGest = -1; getDrag = () => drag; cancelPortDrag = () => { if (drag && (drag.port || drag.tap2)) drag = null; S.connDrag = null; };
   svg.addEventListener('pointerdown', e => {
-    svg.focus(); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (drag && drag.ocorner != null) { const d0 = drag; drag = null; finishOutline(d0); } if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } if (S.draft && S.draft.pts && lineGest >= 0) { if (lineGest === 0) S.draft = null; else S.draft.pts.length = Math.min(S.draft.pts.length, lineGest); lineGest = -1; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; return; }
+    svg.focus(); try { svg.setPointerCapture(e.pointerId); } catch (err) { /* a pointer that already ended */ } pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; if (drag && drag.ocorner != null) { const d0 = drag; drag = null; finishOutline(d0); } if (sculptDrag) cancelSculpt(); if (S.draft && S.draft.box) { S.draft = null; drawScene(); } if (S.draft && S.draft.pts && lineGest >= 0) { if (lineGest === 0) S.draft = null; else S.draft.pts.length = Math.min(S.draft.pts.length, lineGest); lineGest = -1; drawScene(); } pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: S.view.scale, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; drag = null; if (S.connDrag) { S.connDrag = null; drawScene(); } return; }
     const p = toWorld(e), sp = inSite([snap(p[0]), snap(p[1])]);
     if (S.pickPoint) { const f = S.pickPoint; S.pickPoint = null; S.pickCancel = null; { const q = inSite(p); f([r2(q[0]), r2(q[1])]); } return; }
+    { const pd = e.target.getAttribute && e.target.getAttribute('data-port'), left = !(e.pointerType === 'mouse' && e.button !== 0), T = document.body.classList.contains('ctl-touch');
+      if (S.portFrom && left && (S.tool === 'select' || S.tool === 'conn')) {   // the second tap of a tap-tap connection: an item (or one of its dots)
+        drag = { tap2: true, pd, p, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, vx: S.view.x, vy: S.view.y };   // it counts as a tap when the finger lifts; a drag pans instead
+        return;
+      }
+      if (pd && left && (S.tool === 'select' || S.tool === 'conn')) { const [iid, pid] = pd.split('|'); drag = { port: { itemId: iid, portId: pid }, sx: e.clientX, sy: e.clientY, moved: false }; S.connDrag = { from: { itemId: iid, portId: pid }, to: p, hover: null }; if (T) void 0; return; } }
     if (e.button === 1 || (e.button === 0 && e.altKey)) { drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: S.view.x, vy: S.view.y }; return; }
     if (S.drawOutline && S.od) {   // drawing the outline: a tap or click adds a corner (a pinch or a drag does not)
       if (e.pointerType === 'mouse' && e.button === 2) { if (S.od.pts.length >= 3) odClose(); return; }
@@ -851,6 +858,9 @@ function wireCanvas() {
     if (!drag && !S.draft && e.pointerType === 'mouse' && S.tool !== 'select' && S.tool !== 'ground' && (BOX_DEF[S.tool] || S.tool === 'plant')) { S.ghost = inSite([snap(p[0]), snap(p[1])]); const a = ghostAttrs(); if (S.ghostEl && S.ghostEl.isConnected && a) { for (const k in a.at) S.ghostEl.setAttribute(k, a.at[k]); } else drawScene(); return; }   // move the preview itself: redrawing a big plan on every mouse move would stutter
     if (S.draft && S.draft.pts && !drag) { S.draft.hover = inSite([snap(p[0]), snap(p[1])]); drawScene(); return; }
     if (!drag) return;
+    if (drag.tap2) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag = { pan: true, sx: drag.sx, sy: drag.sy, vx: drag.vx, vy: drag.vy }; else return; }
+    if (drag.port && !S.connDrag) { drag = null; return; }
+    if (drag.port) { if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) drag.moved = true; if (drag.moved) { const h = hitTest(p, true); S.connDrag.to = p; S.connDrag.hover = h && h.id !== drag.port.itemId ? h.id : null; drawScene(); } return; }
     if (drag.tap || drag.otap) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag = null; return; }
     if (drag.pan) { S.view.x = drag.vx + e.clientX - drag.sx; S.view.y = drag.vy + e.clientY - drag.sy; drawScene(); return; }
     if (drag.ocorner != null) { const P = S.plan.site.poly, s = S.plan.site, np = P.map(q => q.slice()); np[drag.ocorner] = [Math.min(s.w, Math.max(0, snap(p[0]))), Math.min(s.h, Math.max(0, snap(p[1])))]; if (!O.selfIntersects(np)) { S.plan.site.poly = np; drag.moved = true; drawScene(); } return; }
@@ -879,8 +889,20 @@ function wireCanvas() {
     pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null;
     if (!drag) return;
     const d = drag; drag = null;
+    if (d.tap2) {   // the second tap of a tap-tap connection: an item (or one of its dots)
+      const f = S.portFrom; S.portFrom = null; if (!f || pointers.size > 0 || pinch) { drawAll(); return; }
+      let tid = null, tport = null; if (d.pd) { [tid, tport] = d.pd.split('|'); } else { const hit = hitTest(d.p, true); if (hit && ['gear', 'hydro'].includes(hit.kind)) tid = hit.id; }
+      if (tid && tid !== f.itemId) { const msg = IN().connectPort(f.itemId, f.portId, tid, tport, d.p); if (msg) toast(msg, 5000); if (S.tool === 'conn' && !S.keep) setTool('select'); } else { toast('Connection cancelled.', 2000); drawAll(); }
+      return;
+    }
     if (d.tap) { if (pointers.size === 0 && !pinch) placeTap(d.p); return; }
     if (d.otap) { if (pointers.size === 0 && !pinch && S.od) odAdd(d.p); return; }
+    if (d.port) {   // a hose pulled from a dot, or just a tap on the dot (then tap the other item)
+      const cd = S.connDrag; S.connDrag = null;
+      if (d.moved) { const pp = toWorld(e), hit = hitTest(pp, true); if (hit && hit.id !== d.port.itemId && ['gear', 'hydro'].includes(hit.kind)) { const msg = IN().connectPort(d.port.itemId, d.port.portId, hit.id, null, pp); if (msg) toast(msg, 5000); if (S.tool === 'conn' && !S.keep) setTool('select'); } else { toast('Not connected: drop it on an item with a matching port.', 3500); drawAll(); } }
+      else { S.portFrom = d.port; const T = document.body.classList.contains('ctl-touch'); toast((T ? 'Tap' : 'Click') + ' the item to connect it to (matching dots glow). ' + (T ? 'Tap empty ground to stop.' : 'Esc stops.'), 4500); drawAll(); }
+      void cd; return;
+    }
     if (d.ocorner != null) { finishOutline(d); return; }
     if (d.sculpt) { endSculpt(); return; }
     if (d.draw) {
@@ -901,7 +923,7 @@ function wireCanvas() {
     if ((d.move || d.handle) && d.moved) commit();
   };
   svg.addEventListener('pointerleave', () => { if (S.ghost) { S.ghost = null; drawScene(); } });
-  svg.addEventListener('pointerup', e => { up(e); lineGest = -1; }); svg.addEventListener('pointercancel', e => { if (drag && (drag.tap || drag.otap)) drag = null; up(e); lineGest = -1; });   // a cancelled touch never places anything
+  svg.addEventListener('pointerup', e => { up(e); lineGest = -1; }); svg.addEventListener('pointercancel', e => { if (drag && (drag.tap || drag.otap)) drag = null; if (drag && (drag.port || drag.tap2)) { drag = null; S.connDrag = null; drawAll(); } up(e); lineGest = -1; });   // a cancelled touch never places anything
   svg.addEventListener('dblclick', () => { if (S.draft && S.draft.pts) finishLine(); else if (S.sel.size === 1) { const it = byId([...S.sel][0]); if (it && it.kind === 'block') editBlock(it.def); } });
   let wheelAt = 0;
   svg.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey && S.sel.size) { const now = performance.now(); const quiet = now - wheelAt > 250; wheelAt = now; if (quiet) rotateSel(((e.deltaY || e.deltaX) < 0 ? -1 : 1) * 15); return; }   // one turn per notch, not one per trackpad event
@@ -1213,6 +1235,7 @@ function wireKeys() {
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (S.tab === 'setup' && !(mod && (k === 'z' || k === 'y')) && !(S.pickPoint && e.key === 'Escape')) return;
     if ((e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}') && S.sel.size) { e.preventDefault(); rotateSel((e.key === '[' || e.key === '{' ? -1 : 1) * (e.shiftKey ? 45 : 15)); return; }
+    if (e.key === 'Escape' && (S.portFrom || S.connDrag)) { S.portFrom = null; cancelPortDrag(); e.preventDefault(); drawAll(); return; }
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? hist.redo() : hist.undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); hist.redo(); return; }
     if (mod && k === 'd') { e.preventDefault(); duplicate(); return; }

@@ -109,6 +109,13 @@ export class PlantField {
       jitter:+b.jitter||0, seed:b.seed|0||1, sizeVar:b.sizeVar===undefined?0.1:+b.sizeVar, scale:b.scale>0?+b.scale:1, sy:b.sy>0?Math.min(4,Math.max(0.25,+b.sy)):1 };   // sy stretches the plant upwards only (a taller or shorter line of the same crop)
     this.blocks.push(c); return c;
   }
+  /* A plan with few plants has little to draw, so it can afford more detail than its Quality setting allows for a big farm:
+     up to 1,500 plants get the High limits, up to 5,000 the Medium limits, and never less than the chosen quality. The triangle budget stays modest. */
+  limits(){
+    const Q = FIELD_QUALITY[this.quality], n = this.count(), up = n <= 1500 ? FIELD_QUALITY.high : n <= 5000 ? FIELD_QUALITY.medium : null;
+    if(!up || up.maxFull <= Q.maxFull) return Q;
+    return { ...Q, maxFull:Math.max(Q.maxFull, up.maxFull), maxReduced:Math.max(Q.maxReduced, up.maxReduced), p0:Math.min(Q.p0, up.p0), p1:Math.min(Q.p1, up.p1), p2:Math.min(Q.p2, up.p2), triBudget:Math.max(Q.triBudget, Math.min(up.triBudget, 1500000)) };
+  }
   count(){ let n=0; for(const b of this.blocks) n+=b.rows*b.cols; return n; }
   rules(){ return { blocks:this.blocks.map(b=>({...b})) }; }   // what goes in the plan file
 
@@ -121,7 +128,7 @@ export class PlantField {
   }
 
   select(view){
-    const Q = FIELD_QUALITY[this.quality], t0 = (typeof performance!=='undefined'?performance.now():Date.now());
+    const Q = this.limits(), t0 = (typeof performance!=='undefined'?performance.now():Date.now());
     const cand = [[],[],[],[]];     // per level: {sp, x, z, rot, sc, px}
     const stats = { considered:0, culled:0, full:0, reduced:0, proxy:0, marker:0, represented:0, demoted:0, thinned:0, tris:0, ms:0, quality:this.quality };
     let rmax = 0; for(const k in this.species) rmax=Math.max(rmax, this.species[k].r);

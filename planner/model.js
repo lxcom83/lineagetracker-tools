@@ -36,6 +36,7 @@ import { cleanPoly, selfIntersects, area as polyArea } from './outline.js';
 import { crossesItself, MAX_RETAIN_WALLS, MAX_RETAIN_PTS, RETAIN_MIN_H, RETAIN_MAX_H } from './earthworks.js';
 import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
 import { HYDRO_TYPES, HYDRO_KEYS, DRAINS, MEDIA, LIMITS_HYDRO, sites as hydroSites, linkProblem } from './hydro.js';
+import { portsOf, pickPair, endPoints, portsValid, linkKey } from './hydro3d.js';
 import { TRAY_PRESETS, TRAY_KINDS, CYCLES, EQUIP, LIMITS as INDOOR_LIMITS, LIMITS_GEAR, UNITS, timeline as cycleTimeline } from './indoor.js';
 export const FORMAT = 'lt-planner-plan', VERSION = 4, EXT = '.ltplan';
 /* How far a plan may expand once every block copy is written out in full.  A small file can ask for an enormous
@@ -129,7 +130,7 @@ function cleanItem(it, ids, defs) {
     }
     if (it.kind === 'hydro') {
       const type = HYDRO_KEYS.includes(it.type) ? it.type : 'nft';
-      Object.assign(o, { type, spacing: r3(num(it.spacing, 0.2, 0.05, 1)), channels: Math.round(num(it.channels, 6, 1, 24)), channelSpacing: r3(num(it.channelSpacing, 0.2, 0.1, 1)), slope: Math.round(num(it.slope, 60, 10, 500)), flow: r3(num(it.flow, 0.25, 0.05, 2)), volume: r3(num(it.volume, 0, 0, 5000)), drain: DRAINS.includes(it.drain) ? it.drain : 'recirculate' });
+      Object.assign(o, { type, spacing: r3(num(it.spacing, 0.2, 0.05, 1)), channels: Math.round(num(it.channels, 6, 1, 24)), channelSpacing: r3(num(it.channelSpacing, 0.2, 0.1, 1)), pockets: Math.round(num(it.pockets, 20, 4, 60)), slope: Math.round(num(it.slope, 60, 10, 500)), flow: r3(num(it.flow, 0.25, 0.05, 2)), volume: r3(num(it.volume, 0, 0, 5000)), drain: DRAINS.includes(it.drain) ? it.drain : 'recirculate' });
       if (CYCLES[key(it.crop)] && CYCLES[it.crop].group === 'Hydro') o.crop = it.crop;
       o.sow = day(it.sow);
       if (it.actual && typeof it.actual === 'object') { const a = {}; for (const k of ['germ', 'grow']) if (day(it.actual[k])) a[k] = it.actual[k]; if (Object.keys(a).length) o.actual = a; }
@@ -161,6 +162,8 @@ function cleanItem(it, ids, defs) {
   } else if (it.kind === 'conn') {   // a link between two indoor items; its line is worked out from where they stand (syncConns)
     const ref = v => str(v, 24).replace(/[^A-Za-z0-9_-]/g, '');
     Object.assign(o, { from: ref(it.from), to: ref(it.to), medium: MEDIA.includes(it.medium) ? it.medium : 'water', note: str(it.note, 120), pts: [[0, 0], [0, 0]] });
+    if (it.fp) o.fp = ref(it.fp).slice(0, 12); if (it.tp) o.tp = ref(it.tp).slice(0, 12);   // the ports it joins (named places on each item)
+    if (it.free === true) { o.free = true; o.pts = (Array.isArray(it.pts) && it.pts.length === 2 ? it.pts : [[0, 0], [0, 0]]).map(q => [r3(Math.max(-3000, Math.min(3000, num(q && q[0], 0)))), r3(Math.max(-3000, Math.min(3000, num(q && q[1], 0))))]); }   // unlocked: the line stays where it was left
     if (!o.from || !o.to) return null;
   } else if (k.line) {
     const pts = (Array.isArray(it.pts) ? it.pts : []).slice(0, 500).filter(p => Array.isArray(p) && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])) && p[0] !== null && p[1] !== null && p[0] !== '' && p[1] !== '').map(p => [r3(num(p[0], 0)), r3(num(p[1], 0))]);
@@ -301,22 +304,45 @@ export function cleanPlan(p) {
 /* links follow their two ends: drop any whose end is gone, that join an item to itself or repeat another, and redraw the line centre to centre */
 const LINKABLE = ['room', 'shelf', 'tray', 'gear', 'hydro'];
 export function syncConns(list) {
-  const byId = new Map(list.map(i => [i.id, i])), seen = new Set();
-  for (let x = list.length - 1; x >= 0; x--) {
+  const byId = new Map(list.map(i => [i.id, i]));
+  for (let x = list.length - 1; x >= 0; x--) {   // links with a missing, same or unlinkable end go
     const c = list[x]; if (c.kind !== 'conn') continue;
-    const a = byId.get(c.from), b = byId.get(c.to), key = [c.from, c.to].sort().join('|') + '|' + c.medium;
-    if (!a || !b || a === b || !LINKABLE.includes(a.kind) || !LINKABLE.includes(b.kind) || seen.has(key) || typeof a.x !== 'number' || typeof b.x !== 'number') { list.splice(x, 1); continue; }
-    seen.add(key); c.pts = [[r3(a.x), r3(a.y)], [r3(b.x), r3(b.y)]];
+    const a = byId.get(c.from), b = byId.get(c.to);
+    if (!a || !b || a === b || !LINKABLE.includes(a.kind) || !LINKABLE.includes(b.kind) || typeof a.x !== 'number' || typeof b.x !== 'number') list.splice(x, 1);
+  }
+  const used = new Set();   // ports already taken by an earlier link, so a second link takes a free port when there is one
+  for (const c of list) {   // repair and pick ports first, so two older links between the same pair end up on different ports instead of one being lost
+    if (c.kind !== 'conn') continue; const a = byId.get(c.from), b = byId.get(c.to);
+    if ((c.fp || c.tp) && !(c.fp && c.tp && portsValid(c, a, b))) { delete c.fp; delete c.tp; }   // a port that is gone, carries something else, or no longer pairs up
+    if (!c.fp && !c.tp && !c.free) { const pr = pickPair(a, b, c.medium, used); if (pr) { c.fp = pr.from.id; c.tp = pr.to.id; } }
+    if (c.fp) used.add(c.from + '|' + c.fp); if (c.tp) used.add(c.to + '|' + c.tp);
+  }
+  const seen = new Set();
+  for (let x = list.length - 1; x >= 0; x--) {   // then the same two ports twice is one link
+    const c = list[x]; if (c.kind !== 'conn') continue; const key = linkKey(c);
+    if (seen.has(key)) { list.splice(x, 1); continue; } seen.add(key);
+  }
+  for (const c of list) {
+    if (c.kind !== 'conn' || c.free) continue;   // an unlocked link keeps the line it had
+    const a = byId.get(c.from), b = byId.get(c.to);
+    if (c.fp && c.tp) { try { const { A, B } = endPoints(c, a, b); c.pts = [[r3(A.p[0]), r3(A.p[1])], [r3(B.p[0]), r3(B.p[1])]]; continue; } catch (e) { /* fall back to centres */ } }
+    c.pts = [[r3(a.x), r3(a.y)], [r3(b.x), r3(b.y)]];
   }
   return list;
 }
 /* a new link between two items on a list, or null (missing end, same item, an end that is itself a link, or the same link again) */
-export function makeConn(list, from, to, medium) {
+export function makeConn(list, from, to, medium, ports) {
   const a = list.find(i => i.id === from), b = list.find(i => i.id === to);
   if (!a || !b || a === b || !LINKABLE.includes(a.kind) || !LINKABLE.includes(b.kind) || typeof a.x !== 'number' || typeof b.x !== 'number') return null;
-  const med = MEDIA.includes(medium) ? medium : 'water', key = [from, to].sort().join('|') + '|' + med;
-  if (list.some(c => c.kind === 'conn' && [c.from, c.to].sort().join('|') + '|' + c.medium === key)) return null;
-  return { id: newId(), kind: 'conn', folder: 'indoor', name: 'Link', hidden: false, locked: false, off: false, from, to, medium: med, note: '', pts: [[r3(a.x), r3(a.y)], [r3(b.x), r3(b.y)]] };
+  const med = MEDIA.includes(medium) ? medium : 'water';
+  const used = new Set(); for (const k of list) if (k.kind === 'conn' && !k.free) { if (k.fp) used.add(k.from + '|' + k.fp); if (k.tp) used.add(k.to + '|' + k.tp); }
+  const c = { id: newId(), kind: 'conn', folder: 'indoor', name: 'Link', hidden: false, locked: false, off: false, from, to, medium: med, note: '', pts: [[r3(a.x), r3(a.y)], [r3(b.x), r3(b.y)]] };
+  const pr = pickPair(a, b, med, used, ports && { from: ports.from, to: ports.to });
+  if (ports && (ports.from || ports.to) && !pr) return null;   // the ports asked for cannot be joined
+  if (pr) { c.fp = pr.from.id; c.tp = pr.to.id; }
+  const key = linkKey(c);
+  if (list.some(k => k.kind === 'conn' && linkKey(k) === key)) return null;   // the same two ports again
+  return c;
 }
 /* does block `from` contain block `target`, directly or deeper? */
 function reaches(blocks, from, target, seen = new Set()) {
