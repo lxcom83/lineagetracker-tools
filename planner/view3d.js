@@ -14,8 +14,6 @@ import { el, icon } from '../kit/core.js';
 import { openShare } from './share.js';
 import * as OL from './outline.js';
 import * as IND from './indoor.js';   // rooms, shelves and trays
-import * as H3 from './hydro3d.js';   // where pipes meet things, and where plants go in a hydro system
-import { makeParts } from './hydroparts.js';   // the 3D models of hydro systems, gear and pipes
 import * as EW from './earthworks.js';   // imported directly, like outline.js, so a view opened after an update never meets old code   // imported directly (not through model.js) so a view opened after an update never meets old code
 
 export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow = [], find: findStart = '', grown = false, years = 0 }) {
@@ -168,9 +166,6 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const local = (it, u, v) => { const a = (it.rot || 0) * D2R; return [it.x + u * Math.cos(a) - v * Math.sin(a), it.y + u * Math.sin(a) + v * Math.cos(a)]; };
   const under = it => { let lo = Infinity, hi = -Infinity; const nu = Math.max(2, Math.ceil(it.w / 0.4)), nv = Math.max(2, Math.ceil(it.h / 0.4));
     for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const [x, z] = local(it, (i / nu - 0.5) * it.w, (j / nv - 0.5) * it.h), y = gy(x, z); lo = Math.min(lo, y); hi = Math.max(hi, y); } return { lo, hi }; };
-  const parts = makeParts({ THREE, solids, flat, IND, H3, date });
-  const hasShapes = new Set(Object.keys(PRESETS)), plantJobs = [], surfs = [];   // plants standing in hydro systems and cell trays, and the surfaces they stand on
-  const jobSeed = id => { let h = 7; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
   const TIMBER = ['#9a6a3e', '#8f6136', '#a3734a'], SOIL = '#4b3626';
   // a raised bed: built level (the top is level even on a slope), sleeper boards stacked from the top down past the lowest ground,
   // corner posts, a capping rail and soil just below the top.  An in-ground bed gets a low timber edge that follows the ground.
@@ -311,12 +306,8 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     const pr = IND.TRAY_PRESETS[it.kind2], hgt = it.kind2 === 'pot4' ? 0.09 : it.kind2 === 'prop' ? 0.05 : 0.055;
     const body = box(it.w, hgt, it.h, TRAY_BODY, it.x, y, it.y, ry); body.userData.struct = it.id;
     box(it.w - 0.016, 0.006, it.h - 0.016, MEDIA, it.x, y + hgt - 0.004, it.y, ry);
-    const st = IND.status(it, date), cells = pr ? pr.cells : 0, gr = cy && (st === 'growing' || st === 'ready' || st === 'late') ? parts.growth(it) : null, spc = gr && cells > 1 ? H3.speciesFor(it.crop, hasShapes) : '';
-    if (spc) {   // a cell tray: a real small plant in every cell, standing on the tray
-      const lay = H3.trayLayout(it, cells), xs = H3.footprint(it, 0.05).map(p => p[0]), zs = H3.footprint(it, 0.05).map(p => p[1]);
-      surfs.push({ it, base: y + hgt, surfLocal: () => 0.004, box: [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)] });
-      plantJobs.push({ id: it.id + '#cells', it, species: spc, f: gr.f, lay, young: true });
-    } else if (cy && (st === 'growing' || st === 'ready' || st === 'late')) {   // the canopy rises from sowing to the expected ready date
+    const st = IND.status(it, date);
+    if (cy && (st === 'growing' || st === 'ready' || st === 'late')) {   // the canopy rises from sowing to the expected ready date
       const tl = IND.timeline(cy, it.sow, it.actual, it.reset), total = Math.max(1, IND.daysBetween(it.sow, tl.readyExp)), done = Math.max(0, IND.daysBetween(it.sow, date)), f = Math.min(1, done / total), maxH = cy.group === 'Seedlings' ? 0.16 : 0.09;
       const stage0 = tl.stages[0], dark = cy.light === 'after' && date < stage0.endExp && !stage0.actual;
       const ch = Math.max(0.01, maxH * (dark ? 0.4 * f : f));
@@ -327,49 +318,42 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   /* a reservoir and the pump beside it were both the Water colour and neither was named, so one tub of water
      looked exactly like the next: the tank is darker, the pump is darker still */
   const GEAR3_ITEM = { reservoir50: '#4e86a6', reservoir100: '#3f7693', bucket: '#5d93b0', water_pump: '#2f5c73', air_pump: '#6f9fb5' };
-  /* the height a piece of equipment stands at: its tier board, or the floor; lights hang above the tray, domes sit on it */
-  function gearY(it, shelfOf) {
-    const e = IND.EQUIP[it.item] || IND.EQUIP.led_bar, sh = it.shelf && shelfOf.get(it.shelf), tierTop = sh && sh.__tier ? sh.__tier[Math.min(sh.tiers, it.tier || 1) - 1] : null;
-    const base = tierTop != null && e.mount !== 'floor' ? tierTop : under(it).hi + 0.03;
-    if (e.mount === 'above') return base + 0.055 + it.above;
-    if (e.group === 'Covers' || e.name.includes('dome')) return base + 0.055;
-    return base;
-  }
   function gear(it, shelfOf) {
     const ry = -(it.rot || 0) * D2R, e = IND.EQUIP[it.item] || IND.EQUIP.led_bar, sh = it.shelf && shelfOf.get(it.shelf), tierTop = sh && sh.__tier ? sh.__tier[Math.min(sh.tiers, it.tier || 1) - 1] : null;
-    const y = gearY(it, shelfOf);
-    if (parts.gear(it, y)) return;
+    const base = tierTop != null && e.mount !== 'floor' ? tierTop : under(it).hi + 0.03;
+    let y = base;
+    if (e.mount === 'above') y = base + 0.055 + it.above;   // above the tray on its tier
+    else if (e.group === 'Covers' || e.name.includes('dome')) y = base + 0.055;   // domes and covers sit on top of a tray
     const m = box(it.w, Math.max(0.01, e.hgt), it.h, GEAR3_ITEM[it.item] || GEAR3[e.group] || '#ccc', it.x, y, it.y, ry); m.userData.struct = it.id;
     if (e.group === 'Lights') { const g = box(it.w * 0.9, 0.004, it.h * 0.7, '#ffffff', it.x, y - 0.002, it.y, ry); g.material = flat('#fffbe0'); }
   }
   /* a hydro system: a table or tub at working height, water showing, a canopy that grows with the batch */
   const LINK3 = { water: '#2a7fbf', air: '#8b9298', power: '#e08a1e', control: '#7b4bb0' };
   function hydro(it) {
-    const h = parts.hydro(it, under(it).hi + 0.03), cy = h.gr && h.gr.cy;
-    if (h.noPlants) return;   // a tower draws its own plants up the column
-    surfs.push(h);
-    const species = h.gr && h.lay.count <= 1500 ? H3.speciesFor(it.crop, hasShapes) : '';
-    if (species) plantJobs.push({ id: it.id + '#plants', it, species, f: h.gr.f, lay: h.lay });
-    else if (cy) parts.mat(h, h.gr.st === 'late' ? '#9bb84a' : '#5aa14a');   // microgreens (or a crop with no plant shape): a dense mat
-  }
-  const byId = new Map(all.map(i => [i.id, i]));
-  const standOf = (it, shelfOf) => (it.kind === 'gear' ? gearY(it, shelfOf) : under(it).hi + 0.03);
-  /* a pipe or cable: round tubes lying on the floor with square bends, from a fitting on one item to a fitting on the other */
-  let obsCache = null; const obsAll = () => obsCache || (obsCache = H3.obstacles(all));   // worked out once for every link
-  function link3(c, shelfOf) {
-    const a = byId.get(c.from), b = byId.get(c.to); if (!a || !b) return;   // an end that is switched off or hidden: draw nothing
-    const fits = i => i && (i.kind === 'hydro' || i.kind === 'gear') && i.w > 0 && i.h > 0;
-    if (fits(a) && fits(b) && a !== b) {
-      try {
-        if (c.free) throw new Error('unlocked');   // drawn below as a stretched line where it was left
-        const { A, B } = H3.endPoints(c, a, b);
-        const fl = { lane: Math.min(under(a).hi, under(b).hi) + 0.03, a: standOf(a, shelfOf), b: standOf(b, shelfOf) };
-        const R = H3.routeLink(c, A, B, fl, all, obsAll()); parts.pipe(c.medium, R.pts, R.r); return;
-      } catch (e) { /* fall back to the plain line below */ }
+    const ry = -(it.rot || 0) * D2R, base = under(it).hi, T = it.type, cy = IND.cycleOf(it.crop), st = IND.status(it, date), table = T === 'nft' || T === 'ebb', lift = table ? 0.8 : 0.3;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const [x, z] = local(it, sx * (it.w / 2 - 0.03), sz * (it.h / 2 - 0.03)); box(0.04, lift, 0.04, '#59636e', x, base, z, ry); }
+    const y = base + lift;
+    let canopyY = y + 0.12, slabs = [];
+    if (T === 'nft') {
+      const pitch = it.h / Math.max(1, it.channels), wd = Math.max(0.005, Math.min(0.1, pitch * 0.55));
+      for (let c = 0; c < it.channels; c++) { const [x, z] = local(it, 0, -it.h / 2 + pitch * (c + 0.5)); box(it.w, 0.05, wd, '#cfd8dc', x, y, z, ry); box(Math.max(0.005, it.w - 0.02), 0.004, Math.max(0.002, wd - 0.02), '#6fb3d9', x, y + 0.046, z, ry); slabs.push([x, z, Math.max(0.005, it.w - 0.06), wd * 0.9]); }
+      canopyY = y + 0.05;
+    } else if (T === 'ebb') {
+      box(it.w, 0.1, it.h, '#cfd8dc', it.x, y, it.y, ry); box(Math.max(0.005, it.w - 0.04), 0.004, Math.max(0.005, it.h - 0.04), '#6fb3d9', it.x, y + 0.07, it.y, ry); slabs.push([it.x, it.y, Math.max(0.005, it.w - 0.1), Math.max(0.005, it.h - 0.1)]); canopyY = y + 0.1;
+    } else {
+      box(it.w, 0.25, it.h, '#dfe6ea', it.x, y, it.y, ry); box(Math.max(0.005, it.w - 0.04), 0.004, Math.max(0.005, it.h - 0.04), '#7fc0e0', it.x, y + 0.2, it.y, ry);
+      if (T === 'dwc') box(Math.max(0.005, it.w - 0.01), 0.025, Math.max(0.005, it.h - 0.01), '#f2f2f2', it.x, y + 0.25, it.y, ry);
+      slabs.push([it.x, it.y, Math.max(0.005, it.w - 0.1), Math.max(0.005, it.h - 0.1)]); canopyY = y + (T === 'dwc' ? 0.275 : 0.25);
     }
-    const [p, q] = c.pts || []; if (!p || !q) return;
-    const m = c.medium, lift = m === 'power' ? 0.15 : m === 'control' ? 0.2 : m === 'air' ? 0.25 : 0.3;
-    seg(p, q, m === 'water' ? 0.03 : 0.02, m === 'water' ? 0.03 : 0.02, c.free ? '#d0432f' : LINK3[m] || '#2a7fbf', lift);   // an unlocked link is drawn straight and red, as it was left
+    if (cy && (st === 'growing' || st === 'ready' || st === 'late')) {
+      const tl = IND.timeline(cy, it.sow, it.actual, it.reset), total = Math.max(1, IND.daysBetween(it.sow, tl.readyExp)), done = Math.max(0, IND.daysBetween(it.sow, date)), f = Math.min(1, done / total), ch = Math.max(0.01, 0.22 * f);
+      for (const [x, z, w, d] of slabs) box(Math.max(0.02, w), ch, Math.max(0.02, d), st === 'late' ? '#9bb84a' : '#5aa14a', x, canopyY, z, ry);
+    }
+    it.__lab = canopyY + 0.45;
+  }
+  function link3(c) {
+    const [a, b] = c.pts, m = c.medium, lift = m === 'power' ? 0.15 : m === 'control' ? 0.2 : m === 'air' ? 0.25 : 0.3;
+    seg(a, b, m === 'water' ? 0.03 : 0.02, m === 'water' ? 0.03 : 0.02, LINK3[m] || '#2a7fbf', lift);
   }
   function pergola(it) {
     const ry = -(it.rot || 0) * D2R, u = under(it), Ht = it.height, top = u.hi + Ht, c = it.colour, post = 0.1;
@@ -517,7 +501,7 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
     else if (it.kind === 'tray') tray(it, shelfOf);
     else if (it.kind === 'gear') gear(it, shelfOf);
     else if (it.kind === 'hydro') hydro(it);
-    else if (it.kind === 'conn') link3(it, shelfOf);
+    else if (it.kind === 'conn') link3(it);
     else if (it.kind === 'pergola') pergola(it);
   }
   /* Fences, posts, wires, trellis and walls are thousands of little boxes. Drawing each one on its own is what made big plans hot (7,000+ draw calls on the farm),
@@ -560,18 +544,14 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   const beds = all.filter(it => (it.kind === 'bed' || it.kind === 'greenhouse' || it.kind === 'shape') && it.__top !== undefined);
   const inBed = (x, z) => { for (const b of beds) { if (b.pts) { if (pip3(x, z, b.pts)) return b.__top; continue; } const a = -(b.rot || 0) * D2R, dx = x - b.x, dz = z - b.y, u = dx * Math.cos(a) - dz * Math.sin(a), v = dx * Math.sin(a) + dz * Math.cos(a); if (b.shape === 'round' ? (u / (b.w / 2)) ** 2 + (v / (b.h / 2)) ** 2 <= 1 : Math.abs(u) <= b.w / 2 && Math.abs(v) <= b.h / 2) return b.__top; } return null; };
   const pip3 = (x, y, q) => { let c = false; for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > y) !== (q[j][1] > y) && x < (q[j][0] - q[i][0]) * (y - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c; return c; };
-  const plantY = (x, z) => {
-    for (const q of surfs) { if (x < q.box[0] || x > q.box[2] || z < q.box[1] || z > q.box[3]) continue; const [u, v] = H3.toLocal(q.it, x, z); if (Math.abs(u) <= q.it.w / 2 + 0.06 && Math.abs(v) <= q.it.h / 2 + 0.06) return q.base + q.surfLocal(u, v); }
-    return plantYGround(x, z);
-  };
-  const plantYGround = (x, z) => { const t = beds.length ? inBed(x, z) : null; return t === null ? gy(x, z) : t; };
+  const plantY = (x, z) => { const t = beds.length ? inBed(x, z) : null; return t === null ? gy(x, z) : t; };
 
   /* ---- plants: single plants and crop rows, as rules for the field drawer ---- */
   // the member's own plant looks (plant editor): checked by the plant generator; one that fails is dropped and its plants fall back to the default look
   const mine = {}; for (const [id, x] of Object.entries(plan.varieties || {})) { try { PRESETS['v_' + id] = specFromJSON(specToJSON(x.spec)); mine[id] = x; } catch { /* not usable */ } }
   const rules = M.fieldRules({ ...plan, varieties: mine }, date), singles = [];
   for (const it of all) if (it.kind === 'plant') { const gr = M.growth(it, date); if (gr !== null) singles.push([it, gr, M.presetFor(it.crop, it.variety, it.look, mine)]); }
-  const used = new Set([...rules.map(q => q.species), ...singles.map(s => s[2]), ...plantJobs.map(j => j.species)]);
+  const used = new Set([...rules.map(q => q.species), ...singles.map(s => s[2])]);
   const specs = Object.fromEntries([...used].map(k => [k, PRESETS[k]]));
   const fv = new FieldView(scene, mat, specs); fv.shadows = setShadows(qSel.value); fv.setDetail(1, qSel.value);
   const real = k => fv.size(k);   // measured from the drawn plant, so a 3 m tree is drawn 3 m wide
@@ -579,11 +559,6 @@ export async function open3D({ plan, M, TR, date, ex = 1, keepView = null, glow 
   // size rows from the crop's usual height, except low wide heads (lettuce, cabbage, cauliflower, squash), which are sized from their usual spread
   for (const q of rules) { const e = real(q.species), c = M.CROPS[q.crop] || M.CROPS.other, sp_ = PRESETS[q.species], wide = sp_.kind === 'rosette' || (sp_.kind === 'leafy' && ['loose', 'head', 'curd'].includes(sp_.form || 'loose'));
     /* a member's own variety is drawn exactly as designed */ const own = q.species.startsWith('v_'), ratio = own ? 1 : wide ? (c[2] || 2 * e.r) / (2 * e.r) : (c[3] || e.h) / e.h; blocks.push({ ...q, sy: hScale, scale: Math.max(0.05, ratio * (0.2 + 0.8 * Math.min(1, Math.max(0.15, q.stage)))) }); }
-  for (const j of plantJobs) {   // plants standing in hydro systems and cell trays: real shapes, at the real spacing, sized by the batch's age
-    const e = real(j.species), mature = H3.matureOf(j.species), sp_ = PRESETS[j.species], wide = sp_.kind === 'rosette' || (sp_.kind === 'leafy' && ['loose', 'head', 'curd'].includes(sp_.form || 'loose'));
-    const f = Math.min(1, Math.max(0.15, j.f)), ratio = Math.min(wide ? mature[0] / (2 * e.r) : mature[1] / e.h, 1.15 * Math.min(j.lay.colSp, j.lay.rowSp) / (2 * e.r)) * (j.young ? 0.45 : 1), [bx0, bz0] = H3.localPt(j.it, j.lay.u0, j.lay.v0);
-    blocks.push({ id: j.id, species: j.species, x: bx0, z: bz0, angle: j.it.rot || 0, rows: j.lay.rows, cols: j.lay.cols, rowSpacing: j.lay.rowSp, plantSpacing: j.lay.colSp, jitter: 0.004, seed: jobSeed(j.id), sizeVar: 0.08, scale: Math.max(0.04, ratio * (0.2 + 0.8 * f)), sy: 1 });
-  }
   const drawnH = {};   // how tall each single plant is drawn, so its label sits just above it
   for (const [it, gr, k] of singles) { const e = real(k), sc = Math.max(0.05, (it.spread / (2 * e.r)) * (0.25 + 0.75 * gr));
     /* a plant is stretched upwards only when its height differs from the crop's usual height (a taller or shorter line, set on the plant), then by the plan-wide height scale */

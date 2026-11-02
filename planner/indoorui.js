@@ -2,7 +2,6 @@
    app.js hands this module a small context so it does not need to know how the rest of the planner works. */
 import * as I from './indoor.js';
 import * as H from './hydro.js';
-import * as H3 from './hydro3d.js';   // ports: where a hose or cable joins an item
 
 const GROUP_FILL = { Microgreens: '#a8d67c', Seedlings: '#86c36f' }, STATUS_STROKE = { late: '#d9822b', ready: '#2f7d32', growing: '#3f6b2d', planned: '#8a9a8a', cleared: '#8a9a8a', empty: '#7a8a6a' };
 const SIDE = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
@@ -232,9 +231,6 @@ export function make(ctx) {
     if (it.type === 'nft') {
       const pitch = it.h / it.channels, strip = Math.min(0.1, pitch * 0.5); r = Math.min(r, pitch * 0.3);
       for (let c = 0; c < it.channels; c++) { const y = -it.h / 2 + pitch * (c + 0.5); wrap(sv('rect', { x: -it.w / 2 + 0.02, y: y - strip / 2, width: Math.max(0.01, it.w - 0.04), height: strip, fill: '#8fbfdc', stroke: '#2f6f94', 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke' })); const n = Math.max(1, Math.floor(it.w / sp)); for (let k = 0; k < n && dots.length < 400; k++) dots.push([-it.w / 2 + (k + 0.5) * it.w / n, y]); }
-    } else if (it.type === 'tower') {
-      const n = H.sites(it), rr = Math.min(it.w, it.h) * 0.34; r = Math.min(0.03, rr * 0.4);
-      for (let k = 0; k < n && dots.length < 400; k++) { const a = k / n * Math.PI * 2 * Math.max(1, Math.round(n / 8)); dots.push([Math.cos(a) * rr * (0.55 + 0.45 * ((k % 4) / 3)), Math.sin(a) * rr * (0.55 + 0.45 * ((k % 4) / 3))]); }
     } else {
       const cols = Math.max(1, Math.floor(it.w / sp)), rows = Math.max(1, Math.floor(it.h / sp));
       for (let a = 0; a < rows; a++) for (let b = 0; b < cols; b++) if (dots.length < 400) dots.push([-it.w / 2 + (b + 0.5) * it.w / cols, -it.h / 2 + (a + 0.5) * it.h / rows]);
@@ -248,71 +244,9 @@ export function make(ctx) {
   function drawConn(grp, it, within) {
     const m = MEDIUM[it.medium] || MEDIUM.water, [a, b] = it.pts, bad = connProblem(it, within), px = S.view.scale;
     grp.append(sv('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: bad ? '#c4372b' : m.col, 'stroke-width': 3, 'stroke-dasharray': m.dash || null, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke', opacity: 0.9 }));
-    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, free = it.free === true;
-    if (free) { const ln = grp.lastChild; ln.setAttribute('stroke', '#d0432f'); ln.setAttribute('stroke-dasharray', '3 5'); }   // unlocked: the line stays where it was left, drawn stretched and red
-    for (const q of [a, b]) grp.append(sv('circle', { cx: q[0], cy: q[1], r: 5 / px, fill: free ? '#fff' : '#3f9b4a', stroke: free ? '#d0432f' : '#fff', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));   // green end = locked on, white end = loose
-    grp.append(sv('circle', { cx: mx, cy: my, r: 8 / px, fill: '#fff', stroke: bad ? '#c4372b' : free ? '#d0432f' : m.col, 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
-    grp.append(label(bad ? '!' : free ? '~' : m.ch, mx, my, true));
-  }
-  /* ---- ports: dots on an item where a hose or cable joins ---- */
-  const linkable = i => (i.kind === 'gear' || i.kind === 'hydro') && !i.off && !i.hidden;
-  const portName = (it, pid) => { const P = H3.portsOf(it).find(q => q.id === pid); return P ? P.label : pid; };
-  const portUsed = (it, pid) => items().some(c => c.kind === 'conn' && !c.free && ((c.from === it.id && c.fp === pid) || (c.to === it.id && c.tp === pid)));
-  /* The dots show on a picked item, and on every item while connecting.  While a hose is being pulled, ports it can join glow and the rest fade. */
-  /* where a port's dot is drawn: just outside the item's edge and spread apart, so the dots on a small pump or timer can each be hit with a finger */
-  function dotAt(it, P, pos, r, plist, gap) {
-    const same = (plist || H3.portsOf(it)).filter(q => q.side === P.side), i = same.findIndex(q => q.id === P.id), n = same.length, step = Math.max(0.09, gap || 2.4 * r), t = [-pos.out[1], pos.out[0]];
-    const fixed = it.kind === 'hydro' && (it.type === 'nft' || it.type === 'dutch') && (P.id === 'feed' || P.id === 'return'), extra = fixed ? 0 : (i - (n - 1) / 2) * step - (i - (n - 1) / 2) * 0.09;
-    return [pos.p[0] + t[0] * extra + pos.out[0] * r * 1.3, pos.p[1] + t[1] * extra + pos.out[1] * r * 1.3];
-  }
-  function drawPorts(world) {
-    const px = S.view.scale, touch = document.body.classList.contains('ctl-touch'), r = Math.max((touch ? 11 : 7) / px, 0.03);
-    const src = S.connDrag ? S.connDrag.from : S.portFrom, srcIt = src && byId(src.itemId), srcPort = srcIt && H3.portsOf(srcIt).find(q => q.id === src.portId);
-    if (S.connDrag && !srcPort) { S.connDrag = null; S.portFrom = null; }   // the item it started from is gone (an undo, say)
-    const linking = S.tool === 'conn' || !!src, hit = touch ? 22 / px : r * 1.7, gap = touch ? 0.09 + 46 / px : undefined;
-    const used = new Set(); for (const c of items()) if (c.kind === 'conn' && !c.free) { if (c.fp) used.add(c.from + '|' + c.fp); if (c.tp) used.add(c.to + '|' + c.tp); }   // once, not per dot
-    for (const it of items()) {
-      if (!linkable(it)) continue;
-      if (!linking && !S.sel.has(it.id)) continue;
-      const plist = H3.portsOf(it), dps = plist.map(P => dotAt(it, P, H3.portPos(it, P), r, plist, gap));
-      let near = Infinity; for (let i = 0; i < dps.length; i++) for (let j = i + 1; j < dps.length; j++) near = Math.min(near, Math.hypot(dps[i][0] - dps[j][0], dps[i][1] - dps[j][1]));
-      const hitIt = Math.max(r, Math.min(hit, near / 2));   // never reaches over a neighbouring dot
-      for (const P of plist) {
-        const pos = H3.portPos(it, P), dp = dps[plist.indexOf(P)], isUsed = used.has(it.id + '|' + P.id), m = MEDIUM[P.medium] || MEDIUM.water, isSrc = src && src.itemId === it.id && src.portId === P.id;
-        const ok = !srcPort || isSrc || (it.id !== src.itemId && H3.portCompatible(srcPort, P));
-        const g = sv('g', { opacity: ok ? 1 : 0.22 });
-        if (srcPort && ok && !isSrc) g.append(sv('circle', { cx: dp[0], cy: dp[1], r: r * 1.9, fill: m.col, 'fill-opacity': 0.25, stroke: m.col, 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
-        g.append(sv('circle', { cx: dp[0], cy: dp[1], r, fill: m.col, stroke: isUsed ? '#3f9b4a' : '#fff', 'stroke-width': isUsed ? 3 : 1.5, 'vector-effect': 'non-scaling-stroke', class: 'pl-port', 'pointer-events': 'none' }));
-        g.append(sv('circle', { cx: dp[0], cy: dp[1], r: hitIt, fill: 'transparent', stroke: 'none', class: 'pl-port', 'data-port': it.id + '|' + P.id, style: 'cursor:crosshair' }));   // an easy-to-hit area round the dot
-        if ((linking && ok) || (S.sel.size === 1 && S.sel.has(it.id) && !src)) { const t = label(P.label, dp[0] + pos.out[0] * (r + 0.02) * 2.4, dp[1] + pos.out[1] * (r + 0.02) * 2.4, true); t.setAttribute('class', 'pl-label pl-sub'); t.setAttribute('pointer-events', 'none'); g.append(t); }
-        world.append(g);
-      }
-    }
-    if (S.connDrag) {   // the hose being pulled: from its port to the finger or pointer, with what it would join
-      const cd = S.connDrag, it = byId(cd.from.itemId); if (!it) return;
-      const A = H3.portPos(it, H3.portsOf(it).find(q => q.id === cd.from.portId) || H3.portsOf(it)[0]), m = MEDIUM[(srcPort || {}).medium] || MEDIUM.water, hov = cd.hover && byId(cd.hover);
-      let tgt = null, can = false;
-      if (hov && linkable(hov) && hov.id !== it.id) { const pr = H3.pickPair(it, hov, srcPort.medium, null, { from: srcPort.id }); can = !!pr; tgt = pr && H3.portPos(hov, pr.to); }
-      const to = tgt ? tgt.p : cd.to;
-      world.append(sv('line', { x1: A.p[0], y1: A.p[1], x2: to[0], y2: to[1], stroke: hov && !can ? '#c4372b' : m.col, 'stroke-width': 3, 'stroke-dasharray': '6 4', 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' }));
-      if (hov && linkable(hov) && hov.id !== it.id) { const b = M.bounds(hov, S.plan); world.append(sv('rect', { x: b[0] - 0.05, y: b[1] - 0.05, width: b[2] - b[0] + 0.1, height: b[3] - b[1] + 0.1, fill: 'none', stroke: can ? '#3f9b4a' : '#c4372b', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
-      const tx = label(hov && linkable(hov) && hov.id !== it.id ? (can ? 'Joins ' + portName(hov, H3.pickPair(it, hov, srcPort.medium, null, { from: srcPort.id }).to.id) : 'Cannot join: no matching port') : 'Drop on an item with a matching port', to[0], to[1] - 0.3, true); tx.setAttribute('pointer-events', 'none'); world.append(tx);
-    }
-  }
-  /* join a port on one item to an item (or a chosen port on it); returns a message to show */
-  function connectPort(fromId, fromPort, toId, toPort, at) {
-    const list = items(), a = list.find(i => i.id === fromId), b = list.find(i => i.id === toId), P = a && H3.portsOf(a).find(q => q.id === fromPort);
-    if (!a || !b || !P) return 'Nothing to connect.';
-    if (list.filter(i => i.kind === 'conn').length >= H.LIMITS_HYDRO.conn) return 'That is the most links a plan can hold.';
-    if (toPort) { const T = H3.portsOf(b).find(q => q.id === toPort); if (T && !H3.portCompatible(P, T)) return 'That port does not match: ' + itemName(a) + ' ' + P.label.toLowerCase() + ' cannot join ' + itemName(b) + ' ' + T.label.toLowerCase() + '.'; }
-    let want = { from: fromPort, to: toPort || undefined };
-    if (!toPort && at) { const cs = H3.portsOf(b).filter(q => H3.portCompatible(P, q)).map(q => [Math.hypot(...[0, 1].map(k => H3.portPos(b, q).p[k] - at[k])), q]).sort((x, y) => x[0] - y[0]); if (cs.length && cs[0][0] < 0.3) want.to = cs[0][1].id; }
-    const taker = H3.ROLE_DIR[P.role] === 'dst';   // a link runs from the giving port to the taking port, whichever end was dragged
-    const c = taker ? M.makeConn(list, toId, fromId, P.medium, { from: want.to, to: want.from }) : M.makeConn(list, fromId, toId, P.medium, want);
-    if (!c) { const ok = H3.portsOf(b).some(q => H3.portCompatible(P, q)); return ok ? 'Those two are already joined that way.' : 'That port does not match: ' + itemName(a) + ' ' + P.label.toLowerCase() + ' has no matching port on ' + itemName(b) + '.'; }
-    list.push(c); S.sel = new Set([c.id]); commit();
-    const A = taker ? b : a, B = taker ? a : b, pa = H3.portsOf(A).find(q => q.id === c.fp), pb = H3.portsOf(B).find(q => q.id === c.tp), pr = H.linkProblem(c, A, B);
-    return 'Connected ' + itemName(A) + ' (' + (pa ? pa.label.toLowerCase() : 'port') + ') to ' + itemName(B) + ' (' + (pb ? pb.label.toLowerCase() : 'port') + '). Locked: it follows when you move them.' + (pr ? ' Note: ' + pr : '');
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    grp.append(sv('circle', { cx: mx, cy: my, r: 8 / px, fill: '#fff', stroke: bad ? '#c4372b' : m.col, 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
+    grp.append(label(bad ? '!' : m.ch, mx, my, true));
   }
   /* a new link between two items (the Link tool and the panels); returns a message to show, or '' */
   function link(fromId, toId, medium) {
@@ -333,29 +267,10 @@ export function make(ctx) {
   }
   function connPanel(it) {
     const a = byId(it.from), b = byId(it.to), bad = connProblem(it);
-    const pa = a && H3.portsOf(a), pb = b && H3.portsOf(b), P = (list, id) => (list || []).find(q => q.id === id), free = it.free === true;
-    let len = null; try { if (a && b) len = H3.linkLength(it, a, b, null); } catch (e) { /* no estimate */ }
-    const portSel = (lab, owner, list, key) => el('label', { class: 'small pl-field' }, [lab, (() => {
-      const otherKey = key === 'fp' ? 'tp' : 'fp', otherList = key === 'fp' ? pb : pa, mine = (list || []).filter(q => q.medium === it.medium), keep = P(otherList, it[otherKey]);
-      const ok = mine.filter(q => !keep || H3.portCompatible(q, keep));   // only ports that can join the port at the other end
-      const sel = el('select', { 'aria-label': lab }, (ok.length ? ok : mine).map(q => el('option', { value: q.id, text: q.label })));
-      sel.value = it[key] || '';
-      sel.addEventListener('change', () => {
-        it[key] = sel.value; const mineP = P(list, it[key]), oth = P(otherList, it[otherKey]);
-        if (mineP && oth && !H3.portCompatible(mineP, oth)) { const cand = (otherList || []).filter(q => q.medium === it.medium && H3.portCompatible(mineP, q)); if (cand.length) it[otherKey] = cand[0].id; else delete it[otherKey]; }   // the other end moves to a port that fits
-        commit();
-      });
-      return sel; })()]);
-    put(el('p', { class: 'small', text: itemName(a) + (P(pa, it.fp) ? ' (' + P(pa, it.fp).label.toLowerCase() + ')' : '') + ' to ' + itemName(b) + (P(pb, it.tp) ? ' (' + P(pb, it.tp).label.toLowerCase() + ')' : '') }),
+    put(el('p', { class: 'small', text: itemName(a) + ' to ' + itemName(b) }),
       pickF('Carries', it, 'medium', H.MEDIA.map(k => [k, MEDIUM[k].name])),
-      el('div', { class: 'pl-row' }, [portSel('Port on first item', a, pa, 'fp'), portSel('Port on second item', b, pb, 'tp')]),
-      el('p', { class: 'small ' + (free ? 'pl-warn' : 'muted'), text: free ? 'Unlocked: it stays where you left it and will look stretched when you move an item. Tap Lock to snap it back on.' : 'Locked: it follows the two items when you move them.' }),
-      len != null ? el('p', { class: 'small muted', text: 'About ' + (Math.round(len * 10) / 10) + ' m of ' + (it.medium === 'water' || it.medium === 'air' ? 'hose' : 'cable') + ' (an estimate: out of one fitting, along the floor, into the other).' }) : null,
       bad ? el('p', { class: 'small pl-warn', text: bad }) : null,
-      el('div', { class: 'actions' }, [
-        el('button', { type: 'button', class: 'btn sm', text: free ? 'Lock and reconnect' : 'Unlock', 'aria-label': free ? 'Lock the link and reconnect it to both items' : 'Unlock the link so it stays where it is', onclick: () => { if (free) { delete it.free; toast('Locked and reconnected.', 2500); } else { it.free = true; toast('Unlocked. It stays where it is when you move an item.', 3500); } commit(); } }),
-        el('button', { type: 'button', class: 'btn sm', text: 'Disconnect', 'aria-label': 'Disconnect and remove this link', onclick: () => { const l = items(), i = l.findIndex(x => x.id === it.id); if (i >= 0) { l.splice(i, 1); S.sel = new Set([a ? a.id : '']); toast('Disconnected. Undo brings it back.', 3500); commit(); } } }),
-        el('button', { type: 'button', class: 'btn sm', text: 'Turn it around', onclick: () => { [it.from, it.to] = [it.to, it.from]; [it.fp, it.tp] = [it.tp, it.fp]; if (!it.fp) delete it.fp; if (!it.tp) delete it.tp; commit(); } })]),
+      el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn sm', text: 'Turn it around', onclick: () => { [it.from, it.to] = [it.to, it.from]; commit(); } })]),
       field('Note', it.note, v => { it.note = String(v).slice(0, 120); }, { maxlength: '120' }),
       el('p', { class: 'small muted', text: 'A link is a drawing aid. The planner does not check pipe sizes, pump curves or wiring: ask a qualified person.' }));
   }
@@ -369,15 +284,14 @@ export function make(ctx) {
       el('div', { class: 'pl-row' }, [lenF('Length', it, 'w', 0.1, 12), lenF('Width', it, 'h', 0.1, 12)]),
       lenF('Between plant sites', it, 'spacing', 0.05, 1),
       el('p', { class: 'small', text: H.sites(it) + ' plant sites (worked out from the sizes).' }),
-      it.type === 'tower' ? field('Plant pockets', it.pockets, v => { if (Number.isFinite(v)) it.pockets = Math.min(60, Math.max(4, Math.round(v))); }, { type: 'number', step: '1', min: '4', max: '60', inputmode: 'numeric' }) : null,
       it.type === 'nft' ? el('div', {}, [
         field('Channels', it.channels, v => { if (Number.isFinite(v)) it.channels = Math.min(24, Math.max(1, Math.round(v))); }, { type: 'number', step: '1', min: '1', max: '24', inputmode: 'numeric' }),
         lenF('Between channels', it, 'channelSpacing', 0.1, 1),
         field('Slope: 1 in', it.slope, v => { if (Number.isFinite(v)) it.slope = Math.min(500, Math.max(10, Math.round(v))); }, { type: 'number', step: '5', min: '10', max: '500', inputmode: 'numeric' }),
         field('Flow per channel (L/min)', it.flow, v => { if (Number.isFinite(v) && v > 0) it.flow = Math.min(2, Math.round(v * 100) / 100); }, { type: 'number', step: '0.01', min: '0.05', max: '2', inputmode: 'decimal' }),
         el('p', { class: 'small muted', text: 'Guides give about ' + H.TYPICAL.nftFlow[0] + ' to ' + H.TYPICAL.nftFlow[1] + ' L/min per channel, channels up to about ' + L(H.TYPICAL.nftMaxRun) + ', and a slope of 1 in 30 to 1 in 100. Pump total about ' + r2(H.nftFlow(it)) + ' L/min.' })]) : null,
-      !H.HYDRO_TYPES[it.type].pumped ? field('Solution held (litres)', it.volume, v => { if (Number.isFinite(v) && v >= 0) it.volume = Math.min(5000, Math.round(v * 10) / 10); }, { type: 'number', step: '1', min: '0', max: '5000', inputmode: 'decimal' }) : null,
-      !H.HYDRO_TYPES[it.type].pumped && it.volume ? el('p', { class: 'small muted', text: r2(it.volume / H.sites(it)) + ' L per plant site' + gal(it.volume) + '. Guides suggest ' + H.TYPICAL.litresPerSite[0] + ' to ' + H.TYPICAL.litresPerSite[1] + ' L.' }) : null,
+      it.type !== 'nft' && it.type !== 'ebb' ? field('Solution held (litres)', it.volume, v => { if (Number.isFinite(v) && v >= 0) it.volume = Math.min(5000, Math.round(v * 10) / 10); }, { type: 'number', step: '1', min: '0', max: '5000', inputmode: 'decimal' }) : null,
+      it.type !== 'nft' && it.type !== 'ebb' && it.volume ? el('p', { class: 'small muted', text: r2(it.volume / H.sites(it)) + ' L per plant site' + gal(it.volume) + '. Guides suggest ' + H.TYPICAL.litresPerSite[0] + ' to ' + H.TYPICAL.litresPerSite[1] + ' L.' }) : null,
       H.HYDRO_TYPES[it.type].pumped ? pickF('Drain', it, 'drain', [['recirculate', 'Back to the reservoir'], ['waste', 'Run to waste']]) : null,
       ...mine.map(c => fixRow(c, 'small ' + (c.level === 'warn' ? 'pl-warn' : 'muted'))),
       ctx.sec && ctx.sec('Batch (what is growing here)'),
@@ -519,8 +433,6 @@ export function make(ctx) {
       if (k === 'nft') sizes.append(numF('channels', 1, 24, 'Channels'), runF());
       else if (k === 'dwc') sizes.append(numF('sites', 2, 36, 'Plant sites'));
       else if (k === 'kratky') sizes.append(numF('cols', 1, 12, 'Jars across'), numF('rows', 1, 6, 'Jars deep'));
-      else if (k === 'dutch' || k === 'drip' || k === 'wick') sizes.append(numF('cols', 1, 12, k === 'dutch' ? 'Buckets across' : 'Pots across'), numF('rows', 1, 6, k === 'dutch' ? 'Buckets deep' : 'Pots deep'));
-      else if (k === 'tower') sizes.append(numF('sites', 4, 60, 'Plant pockets'));
       const t = H.template(k, st), h = t.items[0];
       const res = t.items.find(i => i.item && /reservoir|bucket/.test(i.item));
       sum.textContent = h ? H.sites(Object.assign({ w: 0, h: 0, spacing: 0.2 }, h)) + ' plant sites, ' + L(h.w) + ' × ' + L(h.h) + (res ? ', with a ' + Math.round(res.litres || 0) + ' L reservoir and a pump' : h.volume ? ', holding about ' + Math.round(h.volume) + ' L' : '') + '.' : '';
@@ -539,9 +451,6 @@ export function make(ctx) {
     for (const [nm, n] of p.byItem) lines.push(n + ' × ' + nm);
     if (p.links) lines.push(p.links + (p.links === 1 ? ' link drawn' : ' links drawn') + ' (water, air, power, control)');
     if (p.watts) lines.push('About ' + p.watts + ' W of powered equipment, as typed');
-    { let hose = 0, cable = 0; const by = new Map(all.map(i => [i.id, i]));   // lengths are estimates: out of one fitting, along the floor, into the other, with no spare
-      for (const c of all.filter(i => i.kind === 'conn' && !i.off)) { const a = by.get(c.from), b = by.get(c.to); if (!a || !b) continue; try { const L = H3.linkLength(c, a, b, null); if (c.medium === 'water' || c.medium === 'air') hose += L; else cable += L; } catch (e) { /* no estimate for this one */ } }
-      if (hose > 0 || cable > 0) lines.push('About ' + (hose > 0 ? Math.ceil(hose * 10) / 10 + ' m of hose or pipe' : '') + (hose > 0 && cable > 0 ? ' and ' : '') + (cable > 0 ? Math.ceil(cable * 10) / 10 + ' m of cable' : '') + ' (an estimate, with no spare: add some)'); }
     if (!lines.length) return null;
     const text = lines.join('\n');
     return el('details', { class: 'pl-sides' }, [el('summary', { class: 'small', text: 'What this plan is made of' }),
@@ -702,5 +611,5 @@ export function make(ctx) {
     return out;
   }
   const panel = it => { if (it.kind === 'room') roomPanel(it); else if (it.kind === 'shelf') shelfPanel(it); else if (it.kind === 'tray') trayPanel(it); else if (it.kind === 'gear') gearPanel(it); else if (it.kind === 'hydro') hydroPanel(it); else if (it.kind === 'conn') connPanel(it); };
-  return { draw, drawPorts, connectPort, frame, kids, withKids, turnKids, copyKids, panel, planSection, newTray, newGear, addRoomBelow, addTemplate, link, lenF, units, DEFS: { room: [3, 3], shelf: [1.2, 0.45], tray: [0.543, 0.279] } };
+  return { draw, frame, kids, withKids, turnKids, copyKids, panel, planSection, newTray, newGear, addRoomBelow, addTemplate, link, lenF, units, DEFS: { room: [3, 3], shelf: [1.2, 0.45], tray: [0.543, 0.279] } };
 }
