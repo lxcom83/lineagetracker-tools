@@ -137,7 +137,7 @@ function build(g = {}) {
       mi('image', 'Scan a drawing (AI)…', 'Photo of a garden drawing: lays out the areas', scanDrawing),
       mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }))),
       el('div', { class: 'sep' }),
-      mi('upload', 'Plan for the app', 'Beds and planned sowings, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))),
+      mi('upload', 'Plan for the app', 'Beds and hydro systems, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))),
     ]);
     fileWrap.append(menu); menu.querySelector('button').focus();
     const away = e => { if (menu && !menu.contains(e.target) && !fileBtn.contains(e.target)) { closeMenu(); document.removeEventListener('pointerdown', away, true); } };

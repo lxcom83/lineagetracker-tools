@@ -35,7 +35,7 @@ import { unpackGrid } from './terrain.js';
 import { cleanPoly, selfIntersects, area as polyArea } from './outline.js';
 import { crossesItself, MAX_RETAIN_WALLS, MAX_RETAIN_PTS, RETAIN_MIN_H, RETAIN_MAX_H } from './earthworks.js';
 import { BY_ID as PLANT_DB } from '../kit/plantdb.js';
-import { HYDRO_TYPES, HYDRO_KEYS, DRAINS, MEDIA, LIMITS_HYDRO, sites as hydroSites, linkProblem } from './hydro.js';
+import { HYDRO_TYPES, HYDRO_KEYS, DRAINS, MEDIA, LIMITS_HYDRO, sites as hydroSites, linkProblem, reach as hydroReach, RESERVOIR_L as HYDRO_RES_L } from './hydro.js';
 import { portsOf, pickPair, endPoints, portsValid, linkKey } from './hydro3d.js';
 import { TRAY_PRESETS, TRAY_KINDS, CYCLES, EQUIP, LIMITS as INDOOR_LIMITS, LIMITS_GEAR, UNITS, timeline as cycleTimeline } from './indoor.js';
 export const FORMAT = 'lt-planner-plan', VERSION = 4, EXT = '.ltplan';
@@ -555,6 +555,8 @@ export function forApp(plan) {
     // counts as one Place (e.g. "Tomato bed 2") holding everything inside it.
     beds: all.filter(isBedLike).map(it => { const bx = boxOf(it); return { planId: it.id, name: it.name, kind: it.kind === 'shape' ? 'bed' : it.kind, w: bx.w, h: bx.h, x: bx.x, y: bx.y, place: it.place || '' }; })
       .concat(linkedBlocks.map(b => { const bb = bounds(b, plan); return { planId: b.id, name: b.name, kind: 'block', w: r3(bb[2] - bb[0]), h: r3(bb[3] - bb[1]), x: r3((bb[0] + bb[2]) / 2), y: r3((bb[1] + bb[3]) / 2), place: b.place }; })),
+    // hydro systems: the app makes each one a Place marked as a hydro system (type, plant sites, litres)
+    systems: all.filter(it => it.kind === 'hydro').map(it => ({ planId: it.id, name: it.name, type: it.type, sites: hydroSites(it), litres: (it.volume > 0 ? +it.volume : hydroReach(it.id, all).filter(x => x.kind === 'gear' && HYDRO_RES_L[x.item]).reduce((n, x) => n + Math.max(0, +x.litres || HYDRO_RES_L[x.item] || 0), 0)) || 0, w: r3(it.w), h: r3(it.h), x: r3(it.x), y: r3(it.y), crop: typeof it.crop === 'string' ? it.crop.replace(/^(h|s)_/, '') : '', sow: it.sow || '' })),
     sowings: all.filter(it => (it.kind === 'plant' || it.kind === 'rows') && it.sow).map(it => ({ planId: it.id, crop: CROPS[it.crop][0], variety: it.variety || '', sow: it.sow, harvest: it.harvest || '', link: it.link || '', bed: bedUnder(beds, it), after: it.after || '', saveSeed: !!it.save })),
     // dated events for the app's calendar and reminders (the app asks before adding them)
     reminders: events(plan).map(e => ({ planId: e.id, date: e.date, kind: e.kind, title: e.title, remindDaysBefore: e.remind || 0, every: e.every || '' })),

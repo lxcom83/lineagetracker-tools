@@ -302,6 +302,15 @@ export const EQUIP = nul({
   scale:       eq('Kitchen scale', 'Covers', 0.15, 0.12, 0.03, 0, 0, 'floor', 'For weighing seed and yield.'),
   reservoir50:  eq('Reservoir, about 50 L', 'Water', 0.5, 0.4, 0.45, 0, 0, 'floor', 'A lidded tub for nutrient solution. Keep it dark and covered. Change the size to match yours.', { litres: 50 }),
   reservoir100: eq('Reservoir, about 100 L', 'Water', 0.65, 0.5, 0.55, 0, 0, 'floor', 'A lidded tub for nutrient solution. Keep it dark and covered. Change the size to match yours.', { litres: 100 }),
+  // fungi (guidance only: the planner lays out space, it does not size air, check hygiene or certify anything)
+  hepa_fan:    eq('Fresh-air fan with HEPA filter', 'Air', 0.3, 0.3, 0.3, 40, 24, 'floor', 'Brings fresh air into a clean room or tent through a filter. Growers use filtered air in the clean lab and slight positive pressure there. The planner does not calculate air changes.'),
+  flow_hood:   eq('Flow hood (clean work bench)', 'Air', 0.6, 0.45, 0.6, 100, 4, 'floor', 'A filtered clean-air bench for working with cultures. Keep it away from doors and fans. Check the maker\'s notes for filter care. Ask a qualified person about the circuit.'),
+  still_air_box: eq('Still-air box', 'Covers', 0.6, 0.4, 0.4, 0, 0, 'floor', 'A clear box with arm holes for working with cultures where the air is still.'),
+  sterilizer:  eq('Pressure cooker or steriliser', 'Heat', 0.4, 0.4, 0.4, 0, 0, 'floor', 'For sterilising grain, sawdust and tools. Follow the maker\'s instructions; it holds steam under pressure. Ask a qualified person about gas or power. Its power is not counted in the room\'s power estimate.'),
+  fogger:      eq('Ultrasonic fogger (fruiting humidity)', 'Humidity', 0.2, 0.2, 0.25, 40, 12, 'floor', 'Raises humidity in a fruiting tent or chamber. Many growers aim for roughly 80-90% while fruiting (SARE and Cornell mushroom guides). Do not spray mushrooms directly. Clean the water tank often. Water and mains power: use a residual current device and ask a qualified person.'),
+  humid_ctrl:  eq('Humidity controller', 'Control', 0.1, 0.06, 0.08, 0, 0, 'floor', 'Switches a humidifier on and off from a humidity probe. Keep the probe at the height of the mushrooms.'),
+  co2_monitor: eq('CO2 monitor', 'Control', 0.1, 0.06, 0.05, 0, 0, 'tier', 'Fresh-air need is often judged by CO2. Many growers keep fruiting CO2 below about 800-1000 ppm (SARE and Cornell mushroom guides). A guide for fresh-air planning only, not a safety alarm; check your species.'),
+  bag_rack:    eq('Grow-bag rack', 'Covers', 0.6, 0.4, 0.3, 0, 0, 'floor', 'A tier for grow bags or blocks, so air moves round them.'),
   sink_station: eq('Rinse station', 'Water', 0.6, 0.4, 0.8, 0, 0, 'floor', 'Where you soak, rinse and drain.'),
 });
 export const EQUIP_KEYS = Object.keys(EQUIP), EQUIP_GROUPS = [...new Set(Object.values(EQUIP).map(e => e.group))];
