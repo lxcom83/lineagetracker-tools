@@ -65,6 +65,12 @@ but you (staff) can already try LT-Print. Accounts (ACCOUNTS_GO_LIVE.md) must be
 
 The website terms (section 8, "The LT tools") and the privacy page ("LT tools (LT-Print)") already cover the tools. The terms version did not change, because accounts are not open yet.
 
+## 8. Open LT-Planner to members
+
+1. Check the tools home page now links to LT-Planner and that staff can open /planner/ and make a plan.
+2. On the staff page, Settings, switch on **tools_planner**. The LT-Planner card on the tools home page is always shown; until this switch is on, members who open it see "not open to members yet".
+3. The planner keeps the units choice (metres or feet) on the member's account; the privacy page says so.
+
 ## Releasing a new version later
 
 Bump `CACHE` in `sw.js` (for example `lt-tools-v1.0.1`), so devices pick up the new files.

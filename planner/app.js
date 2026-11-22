@@ -57,7 +57,7 @@ const r2 = n => Math.round(n * 100) / 100;
   try { S.plan = saved ? M.cleanPlan(saved) : null; } catch { S.plan = null; if (saved) { try { localStorage.setItem('ltplanner.lastgood', JSON.stringify(saved)); lastgoodNote = true; } catch { holdDoc = true; } } }   // a plan that would not open is kept aside, so the demo's first autosave cannot overwrite it
   if (!S.plan) S.plan = DEMOS[0].make();
   S.contours = !!S.plan.site.ground;
-  const pl = store.get(K.places); S.places = pl && Array.isArray(pl.list) ? pl : { list: [], from: '' };
+  const pl = store.get(K.places); S.places = pl && Array.isArray(pl.list) ? { ...pl, list: pl.list.filter(x => x && typeof x === 'object') } : { list: [], from: '' };
   build(g);
   syncUnits().then(u => { if (u && S.plan && !S.plan.items.length && (S.plan.site.units === 'ft') !== (u === 'ft')) { if (u === 'ft') S.plan.site.units = 'ft'; else delete S.plan.site.units; drawAll(); } });   // the account's choice, for an empty plan
   if (holdDoc) setTimeout(() => toast('Your last plan could not be opened here and there is no room to set it aside, so it is being left untouched and this sample plan will not be saved. Reload after the update, or download this plan with the menu. Starting a new plan or opening a file turns saving back on.', 12000), 1200);
@@ -118,6 +118,8 @@ async function openRecent(i) { const r = recentList()[i]; if (!r) return; let p;
   if (!stashPlan(S.plan) && !(await confirmBox('Replace the plan you are working on?', 'It is too big to keep in Recent plans. Download it first if you want to keep it.', 'Replace it'))) return;
   try { const l = recentList(), j = JSON.stringify(r.plan), k = l.findIndex(x => JSON.stringify(x.plan) === j); if (k >= 0) { l.splice(k, 1); localStorage.setItem(RECENT_KEY, JSON.stringify(l)); } } catch {}   // it is open now, so it leaves the list
   loadPlan(p, true); toast('Opened "' + p.name + '".'); if (S.tab === 'setup') renderSetup(); }
+/* a plan shared in a group carries the location to about 11 km only, never the exact spot */
+function shareable(o) { const s = o && o.site; return s && typeof s === 'object' ? { ...o, site: { ...s, lat: Math.round(+s.lat * 10) / 10, lon: Math.round(+s.lon * 10) / 10 } } : o; }
 function loadPlan(p, noStash) { holdDoc = false; S.portFrom = null; cancelPortDrag(); if (!noStash && S.plan && S.plan !== p) stashPlan(S.plan); if (S.places && S.places.list.length) M.linkPlaces(p, S.places.list); limitToast = false; wideToast = false; tierToast = false; S.tierView = 0; S.plan = p; S.editOutline = false; S.drawOutline = false; S.od = null; S.contours = !!p.site.ground; S.stepSet = false; S.sel.clear(); S.ctx = null; S.view = null; hist.reset(); autosave(); fit(); drawAll(); }
 
 /* ---------- the page ---------- */
@@ -135,7 +137,7 @@ function build(g = {}) {
       mi('folder', 'Open a plan file…', 'A .ltplan file from this device', openFile),
       mi('list', 'My plants…', 'Your own plant varieties: colours, shapes, crosses', openMyPlants),
       mi('image', 'Scan a drawing (AI)…', 'Photo of a garden drawing: lays out the areas', scanDrawing),
-      mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }))),
+      mi('download', 'Download the plan', 'A .ltplan file to keep or share in your groups', () => downloadText(fileName(), JSON.stringify(shareable({ ...exportPlan(), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' })))),
       el('div', { class: 'sep' }),
       mi('upload', 'Plan for the app', 'Beds and hydro systems, for the app to import', () => downloadText(fileName('.for-app.json'), JSON.stringify({ ...M.forApp(exportPlan()), madeWith: 'Powered by Lineage Tracker, free at lineagetracker.org' }, null, 1))),
     ]);

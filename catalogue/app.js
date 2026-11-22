@@ -267,7 +267,7 @@ function viewControls(v) {
         field('Price note (optional)', text(o.priceNote, val => { o.priceNote = val; refresh(); }, 'Prices in AUD, GST not applicable'), 'Shown under the search bar when prices are on.'),
         field('How to pay (optional)', area(o.pay, val => { o.pay = val; refresh(); }, 'Bank transfer details, PayID, or a PayPal link. Shown in the page footer and when buyers review their order.', 3), 'We only show this text. Payments never go through us.')]),
       group(`Items on the page (${cat.items.length})`, [el('div', { class: 'actions', style: 'margin:0 0 6px' }, [el('button', { type: 'button', class: 'btn sm', text: 'All', onclick: () => setAll(true) }), el('button', { type: 'button', class: 'btn sm', text: 'None', onclick: () => setAll(false) })]), list]),
-      el('p', { class: 'small muted', text: 'The "Powered by Lineage Tracker" line at the foot of the page always stays.' }),
+      el('p', { class: 'small muted', text: 'The "Powered by Lineage Tracker" line stays at the foot of the page on screen. It is left out when a customer prints the page.' }),
       el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Next: the page', onclick: () => go('page') })])]),
     frame]));
   refresh(false);

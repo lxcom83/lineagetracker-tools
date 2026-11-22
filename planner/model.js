@@ -698,6 +698,7 @@ export const PLACE_KINDS = new Set(['bed', 'bench', 'area', 'tank', 'block']);
 /* places: [{ id, name }] from the app.  Linked items take the app's current name; unlinked items whose name matches a
    place exactly (ignoring case and spaces) are linked.  A place is only linked to one item.  Returns how many changed. */
 export function linkPlaces(plan, places) {
+  places = (Array.isArray(places) ? places : []).filter(p => p && typeof p === 'object');
   const byId = new Map(places.map(p => [p.id, p])), key = s => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
   const byName = new Map(places.map(p => [key(p.name), p]));
   // only the plan's own items and block copies: a bed inside a block definition is shared by every copy, so the copy is what links

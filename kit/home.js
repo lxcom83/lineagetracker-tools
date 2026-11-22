@@ -5,7 +5,8 @@ import { topBar } from './bar.js';
 (async function () {
   registerSW();
   await loadConfig();
-  const pass = store.get('lt_tool_pass_print');
+  const passes = ['print', 'catalogue', 'planner', 'nutrients'].map(t => store.get('lt_tool_pass_' + t)).filter(x => x && x.until > Date.now());
+  const pass = passes.sort((a, b) => b.until - a.until)[0];
   const who = pass && pass.until > Date.now() ? { alias: pass.alias, offline: !getSession(), checked: pass.checked } : null;
   $('#bar').replaceWith(topBar({ tool: '', who }));
   const p = $('#who');
